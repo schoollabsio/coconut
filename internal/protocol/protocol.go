@@ -64,9 +64,9 @@ type Stream struct {
 
 // Snapshot replaces backend-derived frontend state (PLAN.md §5.6).
 type Snapshot struct {
-	Type  string          `json:"type"` // always "snapshot"
-	Seq   uint64          `json:"seq"`
-	State SnapshotState   `json:"state"`
+	Type  string        `json:"type"` // always "snapshot"
+	Seq   uint64        `json:"seq"`
+	State SnapshotState `json:"state"`
 }
 
 // ErrorMessage is a standalone backend error (PLAN.md §5.7).
@@ -81,15 +81,15 @@ type ErrorMessage struct {
 // ---------------------------------------------------------------------------
 
 const (
-	CmdSessionRestore    = "session.restore"
-	CmdSessionRename     = "session.rename"
-	CmdWorkspacePick     = "workspace.pick" // opens native dir picker
-	CmdWorkspaceSet      = "workspace.set"
-	CmdAgentStart        = "agent.start"
-	CmdAgentCancel       = "agent.cancel"
-	CmdApprovalRespond   = "agent.approval.respond"
-	CmdSettingsGet       = "settings.get"
-	CmdSettingsSave      = "settings.save"
+	CmdSessionRestore  = "session.restore"
+	CmdSessionRename   = "session.rename"
+	CmdWorkspacePick   = "workspace.pick" // opens native dir picker
+	CmdWorkspaceSet    = "workspace.set"
+	CmdAgentStart      = "agent.start"
+	CmdAgentCancel     = "agent.cancel"
+	CmdApprovalRespond = "agent.approval.respond"
+	CmdSettingsGet     = "settings.get"
+	CmdSettingsSave    = "settings.save"
 )
 
 // ---------------------------------------------------------------------------
@@ -150,14 +150,14 @@ type ApprovalRespondPayload struct {
 // Settings is the app-level persisted configuration. APIKey is
 // write-only: responses carry APIKeyConfigured and never the key.
 type Settings struct {
-	Provider          string   `json:"provider"`          // e.g. "anthropic", "openai", "google"
-	APIKey            string   `json:"apiKey,omitempty"`  // accepted on save; never emitted
-	APIKeyConfigured  bool     `json:"apiKeyConfigured"`  // emitted on get/snapshot
-	Model             string   `json:"model,omitempty"`   // optional model pattern/ID
-	BashWhitelist     []string `json:"bashWhitelist"`     // command prefixes allowed without approval
-	WorkspacePath     string   `json:"workspacePath"`     // last used workspace
-	SessionName       string   `json:"sessionName"`       // display name (mirrors pi session name)
-	LastSessionFile   string   `json:"lastSessionFile,omitempty"`
+	Provider         string   `json:"provider"`         // e.g. "anthropic", "openai", "google"
+	APIKey           string   `json:"apiKey,omitempty"` // accepted on save; never emitted
+	APIKeyConfigured bool     `json:"apiKeyConfigured"` // emitted on get/snapshot
+	Model            string   `json:"model,omitempty"`  // optional model pattern/ID
+	BashWhitelist    []string `json:"bashWhitelist"`    // command prefixes allowed without approval
+	WorkspacePath    string   `json:"workspacePath"`    // last used workspace
+	SessionName      string   `json:"sessionName"`      // display name (mirrors pi session name)
+	LastSessionFile  string   `json:"lastSessionFile,omitempty"`
 }
 
 type SettingsSavePayload struct {
@@ -190,10 +190,10 @@ type ChatMessage struct {
 
 // Tool call statuses.
 const (
-	ToolRunning          = "running"
-	ToolDone             = "done"
-	ToolError            = "error"
-	ToolPendingApproval  = "pending_approval"
+	ToolRunning         = "running"
+	ToolDone            = "done"
+	ToolError           = "error"
+	ToolPendingApproval = "pending_approval"
 )
 
 type ToolCall struct {
@@ -213,7 +213,7 @@ const (
 
 type ApprovalRequest struct {
 	ID    string `json:"id"`
-	Kind  string `json:"kind"`  // ApprovalKind*
+	Kind  string `json:"kind"` // ApprovalKind*
 	Title string `json:"title"`
 	// propose_edit:
 	Path string `json:"path,omitempty"`
