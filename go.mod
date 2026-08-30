@@ -2,7 +2,10 @@ module github.com/jschool/custard
 
 go 1.26
 
-require github.com/wailsapp/wails/v2 v2.15.0
+require (
+	github.com/sergi/go-diff v1.4.0
+	github.com/wailsapp/wails/v2 v2.15.0
+)
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
@@ -24,7 +27,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
-	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect

@@ -101,13 +101,13 @@
       "id": "9",
       "subject": "Build frontend UI per mockup",
       "description": "BackendClient (wails transport), EventBus, custom UIStore + useUIState hook, seq-gap → resnapshot logic, rAF buffering for token streams. Components: header (session name, workspace path, settings gear), 3-column resizable/collapsible grid, tool call log with pending-approval entries, chat with markdown + streaming, composer (Enter/Shift+Enter/autoresize), content panel (preview + What/Why/Diff approval view, Approve-only), settings modal as small form (provider, API key, model, bash whitelist textarea). Match mockup styling.",
-      "status": "in_progress",
+      "status": "completed",
       "activeForm": "Building frontend UI",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841156,
-      "updatedAt": 1788130084527
+      "updatedAt": 1788130448104
     },
     {
       "id": "10",

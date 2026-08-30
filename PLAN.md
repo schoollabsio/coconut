@@ -1,5 +1,5 @@
 # Technical Specification  
-## Go-based Coding Agent Desktop Application  
+## Go-based Coding Agent Desktop Application (Custard)
 
 ## 1. Introduction
 
