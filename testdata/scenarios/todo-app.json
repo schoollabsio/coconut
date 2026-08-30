@@ -1,0 +1,568 @@
+{
+  "name": "todo-app",
+  "steps": [
+    {
+      "waitFor": {
+        "command": "prompt",
+        "messageContains": "delete button"
+      }
+    },
+    {
+      "emit": {
+        "type": "agent_start"
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "turn_start"
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "message_start",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ]
+        }
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "I see the bug. "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "In `TodoList.tsx` the delete handler "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "is passed the array `index`, but the list "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "is filtered before rendering \u2014 so indexes shift "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "and the wrong todo gets deleted. "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "I'll switch the handler to use `todo.id`."
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_end",
+          "contentIndex": 0
+        }
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_1",
+        "toolName": "read",
+        "args": {
+          "path": "App.tsx"
+        }
+      },
+      "delayMs": 80
+    },
+    {
+      "emit": {
+        "type": "tool_execution_end",
+        "toolCallId": "call_1",
+        "toolName": "read",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "function App() { ... <TodoList todos={visible} onDelete={deleteTodo} /> }"
+            }
+          ],
+          "details": {}
+        },
+        "isError": false
+      },
+      "delayMs": 120
+    },
+    {
+      "emit": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_2",
+        "toolName": "read",
+        "args": {
+          "path": "TodoList.tsx"
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "tool_execution_end",
+        "toolCallId": "call_2",
+        "toolName": "read",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "todos.filter(...).map((todo, index) => <TodoItem onDelete={() => onDelete(index)} />)"
+            }
+          ],
+          "details": {}
+        },
+        "isError": false
+      },
+      "delayMs": 120
+    },
+    {
+      "emit": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_3",
+        "toolName": "propose_edit",
+        "args": {
+          "path": "TodoList.tsx",
+          "what": "Use todo.id in the delete handler instead of the array index",
+          "why": "The list is filtered, so indexes shift and the wrong item is deleted",
+          "edits": [
+            {
+              "oldText": "onClick={() => onDelete(index)}",
+              "newText": "onClick={() => onDelete(todo.id)}"
+            }
+          ]
+        }
+      },
+      "delayMs": 80
+    },
+    {
+      "emit": {
+        "type": "extension_ui_request",
+        "id": "appr_1",
+        "method": "confirm",
+        "title": "custard://propose_edit",
+        "message": "{\"toolCallId\":\"call_3\",\"path\":\"TodoList.tsx\",\"what\":\"Use todo.id in the delete handler instead of the array index\",\"why\":\"The list is filtered, so indexes shift and the wrong item is deleted\",\"edits\":[{\"oldText\":\"onClick={() => onDelete(index)}\",\"newText\":\"onClick={() => onDelete(todo.id)}\"}]}"
+      },
+      "delayMs": 30
+    },
+    {
+      "waitForResponse": "appr_1"
+    },
+    {
+      "emitIf": {
+        "response": "confirmed",
+        "events": [
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "call_3",
+            "toolName": "propose_edit",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Edit applied to TodoList.tsx"
+                }
+              ],
+              "details": {}
+            },
+            "isError": false
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_delta",
+              "contentIndex": 0,
+              "delta": "Applied the fix \u2014 "
+            }
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_delta",
+              "contentIndex": 0,
+              "delta": "tests pass now."
+            }
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_end",
+              "contentIndex": 0
+            }
+          },
+          {
+            "type": "message_end"
+          },
+          {
+            "type": "turn_end",
+            "toolResults": []
+          },
+          {
+            "type": "agent_end",
+            "messages": [],
+            "willRetry": false
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "delayMs": 60
+    },
+    {
+      "emitIf": {
+        "response": "cancelled",
+        "events": [
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "call_3",
+            "toolName": "propose_edit",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user declined"
+                }
+              ],
+              "details": {}
+            },
+            "isError": false
+          },
+          {
+            "type": "message_end"
+          },
+          {
+            "type": "agent_end",
+            "messages": [],
+            "willRetry": false
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "delayMs": 60
+    },
+    {
+      "waitFor": {
+        "command": "prompt",
+        "messageContainsAll": [
+          "mark",
+          "complete"
+        ]
+      }
+    },
+    {
+      "emit": {
+        "type": "agent_start"
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "turn_start"
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "message_start",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": ""
+            }
+          ]
+        }
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "To let users mark todos complete "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "I'll make three changes: "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "add a `toggleTodo` action, "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "render a checkbox in `TodoItem.tsx`, "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "and style completed items with a line-through. "
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_delta",
+          "contentIndex": 0,
+          "delta": "First, updating the notes file."
+        }
+      },
+      "delayMs": 60
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "text_end",
+          "contentIndex": 0
+        }
+      },
+      "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_4",
+        "toolName": "write_content",
+        "args": {
+          "path": "content.md",
+          "content": "# Todo App\n\n- [x] Fix delete handler\n- [ ] Mark todos complete\n"
+        }
+      },
+      "delayMs": 80
+    },
+    {
+      "emit": {
+        "type": "tool_execution_end",
+        "toolCallId": "call_4",
+        "toolName": "write_content",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "Wrote content.md"
+            }
+          ],
+          "details": {}
+        },
+        "isError": false
+      },
+      "delayMs": 120
+    },
+    {
+      "emit": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_5",
+        "toolName": "propose_edit",
+        "args": {
+          "path": "TodoItem.tsx",
+          "what": "Add a checkbox that toggles todo completion",
+          "why": "Users need to mark todos complete; completed items show a line-through",
+          "edits": [
+            {
+              "oldText": "<span>{todo.text}</span>",
+              "newText": "<label><input type=\"checkbox\" checked={todo.done} onChange={() => onToggle(todo.id)} /><span style={{ textDecoration: todo.done ? 'line-through' : 'none' }}>{todo.text}</span></label>"
+            }
+          ]
+        }
+      },
+      "delayMs": 80
+    },
+    {
+      "emit": {
+        "type": "extension_ui_request",
+        "id": "appr_2",
+        "method": "confirm",
+        "title": "custard://propose_edit",
+        "message": "{\"toolCallId\":\"call_5\",\"path\":\"TodoItem.tsx\",\"what\":\"Add a checkbox that toggles todo completion\",\"why\":\"Users need to mark todos complete; completed items show a line-through\",\"edits\":[{\"oldText\":\"<span>{todo.text}</span>\",\"newText\":\"<label><input type=\\\"checkbox\\\" checked={todo.done} onChange={() => onToggle(todo.id)} /><span style={{ textDecoration: todo.done ? 'line-through' : 'none' }}>{todo.text}</span></label>\"}]}"
+      },
+      "delayMs": 30
+    },
+    {
+      "waitForResponse": "appr_2"
+    },
+    {
+      "emitIf": {
+        "response": "confirmed",
+        "events": [
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "call_5",
+            "toolName": "propose_edit",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Edit applied to TodoItem.tsx"
+                }
+              ],
+              "details": {}
+            },
+            "isError": false
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_delta",
+              "contentIndex": 0,
+              "delta": "Done \u2014 the checkbox "
+            }
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_delta",
+              "contentIndex": 0,
+              "delta": "is wired up."
+            }
+          },
+          {
+            "type": "message_update",
+            "assistantMessageEvent": {
+              "type": "text_end",
+              "contentIndex": 0
+            }
+          },
+          {
+            "type": "message_end"
+          },
+          {
+            "type": "turn_end",
+            "toolResults": []
+          },
+          {
+            "type": "agent_end",
+            "messages": [],
+            "willRetry": false
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "delayMs": 60
+    },
+    {
+      "emitIf": {
+        "response": "cancelled",
+        "events": [
+          {
+            "type": "tool_execution_end",
+            "toolCallId": "call_5",
+            "toolName": "propose_edit",
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "user declined"
+                }
+              ],
+              "details": {}
+            },
+            "isError": false
+          },
+          {
+            "type": "message_end"
+          },
+          {
+            "type": "agent_end",
+            "messages": [],
+            "willRetry": false
+          },
+          {
+            "type": "agent_settled"
+          }
+        ]
+      },
+      "delayMs": 60
+    }
+  ]
+}

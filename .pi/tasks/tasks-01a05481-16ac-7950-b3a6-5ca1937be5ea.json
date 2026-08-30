@@ -53,25 +53,25 @@
       "id": "5",
       "subject": "Implement piadapter (real RPC client)",
       "description": "internal/piadapter: spawn pi --mode rpc, JSONL codec (split on \\n only, strip \\r per rpc.md framing), command id correlation, event stream parsing, extension_ui_request/response bridging, crash detection + restart hook. Unit tests with a fake process.",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "Implementing pi adapter",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841154,
-      "updatedAt": 1788127841154
+      "updatedAt": 1788129248647
     },
     {
       "id": "6",
       "subject": "Build fakepi scripted sidecar + scenarios",
       "description": "cmd/fakepi: speaks pi RPC JSONL; generic get_state/get_messages/set_session_name/abort handling; scenario engine: steps with on-command match, delayed event emits, await-extension_ui_response steps. Scenario files in testdata/scenarios/ reproducing the mockup conversation incl. propose_edit approval flow and write_content.",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "Building fakepi sidecar",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841155,
-      "updatedAt": 1788127841155
+      "updatedAt": 1788129248643
     },
     {
       "id": "7",
@@ -113,13 +113,13 @@
       "id": "10",
       "subject": "Write custard pi extension",
       "description": "pi-extension/custard.ts: propose_edit(path, what, why, edits[]) tool — gates via ctx.ui.confirm with custard:// JSON payload, applies exact-replacement edits on approve, returns await-feedback result on dismiss; write_content(path, content) tool; bash tool_call hook with configurable whitelist (read-only defaults: ls/grep/find/cat/head/tail/pwd...) blocking non-whitelisted commands behind approval; deletion detection. Guidance context via isolated agentDir AGENTS.md or extension system-prompt hook (from task 1 research).",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "Writing custard pi extension",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841156,
-      "updatedAt": 1788127841156
+      "updatedAt": 1788129248645
     },
     {
       "id": "11",
