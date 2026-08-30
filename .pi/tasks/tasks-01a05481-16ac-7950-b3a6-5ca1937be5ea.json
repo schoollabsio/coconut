@@ -53,13 +53,13 @@
       "id": "5",
       "subject": "Implement piadapter (real RPC client)",
       "description": "internal/piadapter: spawn pi --mode rpc, JSONL codec (split on \\n only, strip \\r per rpc.md framing), command id correlation, event stream parsing, extension_ui_request/response bridging, crash detection + restart hook. Unit tests with a fake process.",
-      "status": "in_progress",
+      "status": "completed",
       "activeForm": "Implementing pi adapter",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841154,
-      "updatedAt": 1788129248647
+      "updatedAt": 1788129434335
     },
     {
       "id": "6",
