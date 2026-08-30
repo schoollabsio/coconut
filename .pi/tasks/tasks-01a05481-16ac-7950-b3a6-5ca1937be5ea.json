@@ -77,25 +77,25 @@
       "id": "7",
       "subject": "Implement core backend (actor, sequencer, snapshots)",
       "description": "internal/core: single-writer actor funnels frontend commands + pi events; domain state (agent status/messages/tool calls/approvals/content doc/workspace/settings); global seq; snapshot engine; 8-16ms coalescing for stream events with immediate flush on transitions; event normalizer mapping pi events → backend events (incl. custard:// approval requests and write_content → content.updated); settings persistence in app config dir; workspace dir management.",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "Implementing core backend",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841155,
-      "updatedAt": 1788127841155
+      "updatedAt": 1788130052242
     },
     {
       "id": "8",
       "subject": "Wire Wails transport layer",
       "description": "Bound methods on App: Command(reqJSON) string (envelope in/out, no Go errors for domain failures), RequestSnapshot() string, PickDirectory() string. Single ordered wails event channel \"backend\" carrying event envelopes. App startup wires core + piadapter lifecycle; shutdown kills sidecar.",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "Wiring Wails transport",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841155,
-      "updatedAt": 1788127841155
+      "updatedAt": 1788130052243
     },
     {
       "id": "9",
