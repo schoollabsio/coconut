@@ -2,58 +2,132 @@ package main
 
 import (
 	"context"
-	"sync"
+	"encoding/json"
+	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/jschool/custard/internal/core"
+	"github.com/jschool/custard/internal/piadapter"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App is the Wails-bound application facade. It exposes a minimal,
-// protocol-pure surface to the frontend:
+// App is the Wails-bound application facade. The surface is
+// protocol-pure by design:
 //
-//	Command(reqJSON) string         — command envelope in, response envelope out
-//	RequestSnapshot() string        — snapshot envelope out
-//	PickDirectory() string          — native directory picker
+//	Command(reqJSON) string  — command envelope in, response envelope out
+//	RequestSnapshot() string — snapshot envelope out
 //
 // All backend → frontend traffic flows through the single ordered wails
-// event channel "backend", carrying serialized event envelopes.
+// event channel "backend" (serialized event/stream/error envelopes),
+// preserving the global sequence ordering from PLAN.md §8.4.
 type App struct {
-	ctx  context.Context
-	core *core.Engine
-
-	mu sync.Mutex
+	ctx    context.Context
+	engine *core.Engine
 }
 
 func NewApp() *App {
 	return &App{}
 }
 
-// startup is called when the app has started, after the frontend loads.
+// startup is called after the frontend loads.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// TODO(task 8): construct core.Engine, piadapter, wire event fan-out.
+
+	engine, err := core.NewEngine(core.EngineConfig{
+		ExtensionPath: resolveExtensionPath(),
+		SelfPath:      selfPath(),
+		PickDir:       a.pickDir,
+		Emit:          a.emit,
+	})
+	if err != nil {
+		log.Printf("custard: engine init failed: %v", err)
+		return
+	}
+	a.engine = engine
+	go engine.Run(ctx)
 }
 
 // shutdown is called when the app is closing.
 func (a *App) shutdown(ctx context.Context) {
-	// TODO(task 8): stop sidecar, flush settings.
+	if a.engine != nil {
+		a.engine.Shutdown()
+	}
 }
 
-// Command accepts a serialized command envelope and returns a serialized
-// command_response envelope. Domain errors are reported in-envelope.
+// Command routes a serialized command envelope through the engine.
+// Domain errors are reported in-envelope; the Go error return is never
+// used for domain failures.
 func (a *App) Command(reqJSON string) string {
-	// TODO(task 8): route through core.Engine.
-	return `{"type":"command_response","ok":false,"error":{"code":"not_ready","message":"backend not wired yet"}}`
+	if a.engine == nil {
+		return `{"type":"command_response","ok":false,"error":{"code":"not_ready","message":"backend not initialized"}}`
+	}
+	return string(a.engine.HandleCommand([]byte(reqJSON)))
 }
 
 // RequestSnapshot returns a serialized snapshot envelope.
 func (a *App) RequestSnapshot() string {
-	// TODO(task 8): route through core.Engine.
-	return `{"type":"snapshot","seq":0,"state":{}}`
+	if a.engine == nil {
+		return `{"type":"snapshot","seq":0,"state":{}}`
+	}
+	return string(a.engine.RequestSnapshot())
 }
 
-// PickDirectory opens a native directory picker and returns the chosen path
-// (empty string if cancelled).
-func (a *App) PickDirectory() string {
-	// TODO(task 8): runtime.OpenDirectoryDialog
-	return ""
+// emit serializes an envelope onto the single ordered backend channel.
+func (a *App) emit(env any) {
+	if a.ctx == nil {
+		return
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		log.Printf("custard: marshal envelope: %v", err)
+		return
+	}
+	runtime.EventsEmit(a.ctx, "backend", string(b))
+}
+
+// pickDir opens the native directory picker on the app context.
+func (a *App) pickDir() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose a workspace folder",
+	})
+}
+
+// selfPath returns the running executable path (best effort).
+func selfPath() string {
+	p, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
+// resolveExtensionPath locates pi-extension/custard.ts:
+//  1. CUSTARD_EXTENSION env override
+//  2. next to the resolved sidecar binary (packaged builds)
+//  3. repo layout: <repo>/pi-extension/custard.ts relative to the
+//     dev binary in build/bin/
+func resolveExtensionPath() string {
+	if p := os.Getenv("CUSTARD_EXTENSION"); p != "" {
+		return p
+	}
+	if bin := piadapter.ResolveBinary(selfPath()); bin != "pi" {
+		p := filepath.Join(filepath.Dir(bin), "custard-extension.ts")
+		if fileExists(p) {
+			return p
+		}
+	}
+	if exe := selfPath(); exe != "" {
+		// build/bin/custard → <repo>/pi-extension/custard.ts
+		p := filepath.Join(filepath.Dir(exe), "..", "..", "pi-extension", "custard.ts")
+		if abs, err := filepath.Abs(p); err == nil && fileExists(abs) {
+			return abs
+		}
+	}
+	return "custard.ts" // last resort; pi will error visibly
+}
+
+func fileExists(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }

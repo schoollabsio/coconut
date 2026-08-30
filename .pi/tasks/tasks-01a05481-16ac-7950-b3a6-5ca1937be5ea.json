@@ -89,25 +89,25 @@
       "id": "8",
       "subject": "Wire Wails transport layer",
       "description": "Bound methods on App: Command(reqJSON) string (envelope in/out, no Go errors for domain failures), RequestSnapshot() string, PickDirectory() string. Single ordered wails event channel \"backend\" carrying event envelopes. App startup wires core + piadapter lifecycle; shutdown kills sidecar.",
-      "status": "in_progress",
+      "status": "completed",
       "activeForm": "Wiring Wails transport",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841155,
-      "updatedAt": 1788130052243
+      "updatedAt": 1788130084525
     },
     {
       "id": "9",
       "subject": "Build frontend UI per mockup",
       "description": "BackendClient (wails transport), EventBus, custom UIStore + useUIState hook, seq-gap → resnapshot logic, rAF buffering for token streams. Components: header (session name, workspace path, settings gear), 3-column resizable/collapsible grid, tool call log with pending-approval entries, chat with markdown + streaming, composer (Enter/Shift+Enter/autoresize), content panel (preview + What/Why/Diff approval view, Approve-only), settings modal as small form (provider, API key, model, bash whitelist textarea). Match mockup styling.",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "Building frontend UI",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841156,
-      "updatedAt": 1788127841156
+      "updatedAt": 1788130084527
     },
     {
       "id": "10",
