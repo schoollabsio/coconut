@@ -1,0 +1,149 @@
+{
+  "nextId": 13,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Research pi launch surface for isolated sidecar",
+      "description": "Determine exact pi CLI flags/env for: RPC mode with isolated agent dir (not ~/.pi/agent), loading our bundled extension by path, tool allowlist (disable built-in edit/write), provider/model selection, API key injection via env, session dir. Also find how to inject system-prompt guidance in RPC mode (extension hook? global AGENTS.md in isolated agentDir?). Read usage.md, extensions.md, environment-variables.md, settings.md in the pi docs.",
+      "status": "completed",
+      "activeForm": "Researching pi launch surface",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841153,
+      "updatedAt": 1788127882684
+    },
+    {
+      "id": "2",
+      "subject": "Scaffold repo skeleton with Wails + Vite/React",
+      "description": "go.mod module github.com/jschool/custard; Wails v2 app shell (main.go, app.go, wails.json, build/ assets); frontend/ Vite+React+TS+Tailwind v4; dirs: internal/{protocol,piadapter,core}, cmd/fakepi, pi-extension, testdata/scenarios. Verify wails CLI availability (go install if needed).",
+      "status": "completed",
+      "activeForm": "Scaffolding repo skeleton",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841153,
+      "updatedAt": 1788128033185
+    },
+    {
+      "id": "3",
+      "subject": "Spike pi single-binary bundling",
+      "description": "Timeboxed experiment: compile pi (Node program) into a single executable — try bun build --compile first, Node SEA + postject as fallback. Verify the binary runs `pi --mode rpc` and answers get_state. Document the chosen approach + build script location. Fallback if both fail: ship node runtime + JS bundle.",
+      "status": "pending",
+      "activeForm": "Spiking pi binary bundling",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841154,
+      "updatedAt": 1788127841154
+    },
+    {
+      "id": "4",
+      "subject": "Implement protocol package (Go + TS mirror)",
+      "description": "internal/protocol: envelope, command/event/snapshot/stream message types per PLAN.md §4-5, v1 command set (session.restore, session.rename, workspace.pick/set, agent.start, agent.cancel, agent.approval.respond, settings.get/save) and event set (agent.*, content.updated, settings.changed, notification.created). TS mirror in frontend/src/protocol.ts.",
+      "status": "pending",
+      "activeForm": "Implementing protocol package",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841154,
+      "updatedAt": 1788127841154
+    },
+    {
+      "id": "5",
+      "subject": "Implement piadapter (real RPC client)",
+      "description": "internal/piadapter: spawn pi --mode rpc, JSONL codec (split on \\n only, strip \\r per rpc.md framing), command id correlation, event stream parsing, extension_ui_request/response bridging, crash detection + restart hook. Unit tests with a fake process.",
+      "status": "pending",
+      "activeForm": "Implementing pi adapter",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841154,
+      "updatedAt": 1788127841154
+    },
+    {
+      "id": "6",
+      "subject": "Build fakepi scripted sidecar + scenarios",
+      "description": "cmd/fakepi: speaks pi RPC JSONL; generic get_state/get_messages/set_session_name/abort handling; scenario engine: steps with on-command match, delayed event emits, await-extension_ui_response steps. Scenario files in testdata/scenarios/ reproducing the mockup conversation incl. propose_edit approval flow and write_content.",
+      "status": "pending",
+      "activeForm": "Building fakepi sidecar",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841155,
+      "updatedAt": 1788127841155
+    },
+    {
+      "id": "7",
+      "subject": "Implement core backend (actor, sequencer, snapshots)",
+      "description": "internal/core: single-writer actor funnels frontend commands + pi events; domain state (agent status/messages/tool calls/approvals/content doc/workspace/settings); global seq; snapshot engine; 8-16ms coalescing for stream events with immediate flush on transitions; event normalizer mapping pi events → backend events (incl. custard:// approval requests and write_content → content.updated); settings persistence in app config dir; workspace dir management.",
+      "status": "pending",
+      "activeForm": "Implementing core backend",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841155,
+      "updatedAt": 1788127841155
+    },
+    {
+      "id": "8",
+      "subject": "Wire Wails transport layer",
+      "description": "Bound methods on App: Command(reqJSON) string (envelope in/out, no Go errors for domain failures), RequestSnapshot() string, PickDirectory() string. Single ordered wails event channel \"backend\" carrying event envelopes. App startup wires core + piadapter lifecycle; shutdown kills sidecar.",
+      "status": "pending",
+      "activeForm": "Wiring Wails transport",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841155,
+      "updatedAt": 1788127841155
+    },
+    {
+      "id": "9",
+      "subject": "Build frontend UI per mockup",
+      "description": "BackendClient (wails transport), EventBus, custom UIStore + useUIState hook, seq-gap → resnapshot logic, rAF buffering for token streams. Components: header (session name, workspace path, settings gear), 3-column resizable/collapsible grid, tool call log with pending-approval entries, chat with markdown + streaming, composer (Enter/Shift+Enter/autoresize), content panel (preview + What/Why/Diff approval view, Approve-only), settings modal as small form (provider, API key, model, bash whitelist textarea). Match mockup styling.",
+      "status": "pending",
+      "activeForm": "Building frontend UI",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841156,
+      "updatedAt": 1788127841156
+    },
+    {
+      "id": "10",
+      "subject": "Write custard pi extension",
+      "description": "pi-extension/custard.ts: propose_edit(path, what, why, edits[]) tool — gates via ctx.ui.confirm with custard:// JSON payload, applies exact-replacement edits on approve, returns await-feedback result on dismiss; write_content(path, content) tool; bash tool_call hook with configurable whitelist (read-only defaults: ls/grep/find/cat/head/tail/pwd...) blocking non-whitelisted commands behind approval; deletion detection. Guidance context via isolated agentDir AGENTS.md or extension system-prompt hook (from task 1 research).",
+      "status": "pending",
+      "activeForm": "Writing custard pi extension",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841156,
+      "updatedAt": 1788127841156
+    },
+    {
+      "id": "11",
+      "subject": "End-to-end integration with real pi",
+      "description": "Launch app against real pi sidecar with isolated config: full flow — workspace pick, prompt, streaming chat, tool log, propose_edit approval, write_content rendering, cancel, session restore. Resilience: sidecar crash → agent.sidecar.lost + restart; seq gap recovery. Fix all integration bugs.",
+      "status": "pending",
+      "activeForm": "Integrating with real pi",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841156,
+      "updatedAt": 1788127841156
+    },
+    {
+      "id": "12",
+      "subject": "Tests + macOS packaging",
+      "description": "Go unit tests (protocol codec, normalizer, sequencer, snapshot, whitelist policy); integration test driving core against fakepi scenario; vitest for UIStore reducers. wails build for macOS with embedded frontend dist + bundled pi binary + extension; verify .app launches standalone.",
+      "status": "pending",
+      "activeForm": "Testing and packaging",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1788127841156,
+      "updatedAt": 1788127841156
+    }
+  ]
+}

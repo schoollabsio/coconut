@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FMM Editor</title>
+  <!-- tailwindcss (requires internet to view) -->\n  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 flex items-center justify-center min-h-screen p-2">
+  <div class="bg-gray-900 rounded-2xl shadow-2xl p-2 w-full max-w-5xl border border-gray-800">
+
+    <!-- Header row -->
+    <div class="flex items-center gap-2 px-2 pt-1 pb-2 mb-1 border-b border-gray-800">
+      <input id="session-name" value="Untitled Session" spellcheck="false" aria-label="Session name"
+        class="min-w-0 bg-transparent text-sm text-gray-200 rounded-md px-1.5 py-0.5 border border-transparent hover:border-gray-700 hover:bg-gray-800 focus:border-gray-600 focus:bg-gray-800 outline-none transition-colors" />
+      <span class="h-3.5 w-px bg-gray-800 shrink-0"></span>
+      <svg class="w-3.5 h-3.5 shrink-0 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+      <span class="font-mono text-xs text-gray-500 truncate max-w-[40%]" title="/var/folders/fv/ssxrhck966s2_9b54cv__lsc0000gn/T/fmm-93bc2865-500308340">/var/folders/fv/ssxrhck966s2_9b54cv__lsc0000gn/T/fmm-93bc2865-500308340</span>
+      <button id="settings-open" aria-label="Open settings"
+        class="ml-auto shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
+    </div>
+
+    <div id="col-grid" class="grid grid-cols-1 md:grid-cols-[1fr_12px_2fr_12px_2fr] divide-y md:divide-y-0 divide-gray-800">
+
+      <!-- Left: tool call log -->
+      <div class="col-panel min-w-0 overflow-hidden p-2 min-h-48 flex flex-col">
+        <div class="flex flex-col gap-1.5 overflow-y-auto max-h-96 pr-1 text-xs">
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Read</span> App.tsx</div>
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Read</span> TodoList.tsx</div>
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Edit</span> TodoList.tsx</div>
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Run</span> tests</div>
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Edit</span> TodoItem.tsx</div>
+          <div class="px-2.5 py-1.5 text-gray-400"><span class="font-semibold italic">Edit</span> App.tsx</div>
+          <button id="pending-edit"
+            class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-left text-yellow-300 hover:bg-gray-800/70 transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse shrink-0"></span>
+            <span><span class="font-semibold italic">Edit</span> TodoItem.tsx</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="col-handle group relative hidden md:flex items-stretch justify-center cursor-col-resize touch-none" role="separator" aria-orientation="vertical" data-left="0" data-right="1" data-side="0" title="Drag to resize · click to collapse tools">
+        <div class="w-px bg-gray-800 transition-colors group-hover:bg-blue-400"></div>
+        <span class="collapse-label hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-180 [writing-mode:vertical-rl] text-[10px] uppercase tracking-widest text-gray-500 select-none whitespace-nowrap">Tools</span>
+      </div>
+
+      <!-- Center: conversation + composer -->
+      <div class="col-panel min-w-0 overflow-hidden p-2 flex flex-col">
+        <div id="chat" class="flex flex-col gap-6 text-sm max-h-96 overflow-y-auto pr-2 pt-2">
+          <!-- User message -->
+          <div class="flex justify-end">
+            <div class="bg-gray-800 text-gray-100 rounded-3xl px-4 py-2.5 max-w-[85%]">
+              The delete button in my todo app isn't doing anything. Can you take a look?
+            </div>
+          </div>
+          <!-- Agent message -->
+          <div class="flex gap-3">
+            <span class="bg-gradient-to-br from-blue-400 to-purple-400 bg-clip-text text-transparent select-none mt-0.5">✦</span>
+            <div class="text-gray-300 leading-relaxed space-y-3">
+              <p>Found it. In <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">TodoList.tsx</code>, the delete handler passes the array <span class="text-gray-100 font-semibold">index</span> instead of the todo's <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">id</code>:</p>
+              <pre class="bg-gray-950 border border-gray-800 rounded-lg px-3 py-2.5 text-xs font-mono text-gray-300 overflow-x-auto">onClick={() => onDelete(index)}  <span class="text-gray-600">// should be todo.id</span></pre>
+              <p>Since the list is filtered, indexes shift and the wrong item gets deleted. Switched it to <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">todo.id</code> and the tests pass.</p>
+            </div>
+          </div>
+          <!-- User message -->
+          <div class="flex justify-end">
+            <div class="bg-gray-800 text-gray-100 rounded-3xl px-4 py-2.5 max-w-[85%]">
+              That fixed it. Can you also add a way to mark todos as complete?
+            </div>
+          </div>
+          <!-- Agent message -->
+          <div class="flex gap-3">
+            <span class="bg-gradient-to-br from-blue-400 to-purple-400 bg-clip-text text-transparent select-none mt-0.5">✦</span>
+            <div class="text-gray-300 leading-relaxed space-y-3">
+              <p>Done — three small changes:</p>
+              <ul class="list-disc list-outside ml-4 space-y-1.5">
+                <li>Added a <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">toggleTodo(id)</code> action in <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">App.tsx</code> that flips the <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">done</code> flag.</li>
+                <li>Rendered a checkbox in <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">TodoItem.tsx</code> bound to that action.</li>
+                <li>Applied <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">line-through</code> styling when <code class="bg-gray-800 text-gray-200 rounded px-1.5 py-0.5 text-xs">done</code> is true.</li>
+              </ul>
+              <p>One last edit is ready for your review — approve it in the content panel to apply it. If it's not what you want, just tell me what to change.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Composer -->
+        <form id="composer" class="mt-3 flex items-start gap-2 bg-gray-800 rounded-3xl px-4 py-2">
+          <textarea id="composer-input" rows="1" placeholder="Ask a follow-up…"
+            class="flex-1 min-w-0 bg-transparent text-sm text-gray-100 placeholder-gray-500 outline-none resize-none leading-relaxed py-1 overflow-y-auto"></textarea>
+          <button type="submit" aria-label="Send message"
+            class="w-8 h-8 shrink-0 rounded-full bg-blue-500 hover:bg-blue-400 transition-colors flex items-center justify-center text-white">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-7 7l7-7 7 7"/></svg>
+          </button>
+        </form>
+      </div>
+
+      <div class="col-handle group relative hidden md:flex items-stretch justify-center cursor-col-resize touch-none" role="separator" aria-orientation="vertical" data-left="1" data-right="2" data-side="2" title="Drag to resize · click to collapse content">
+        <div class="w-px bg-gray-800 transition-colors group-hover:bg-blue-400"></div>
+        <span class="collapse-label hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 [writing-mode:vertical-rl] text-[10px] uppercase tracking-widest text-gray-500 select-none whitespace-nowrap">Content</span>
+      </div>
+
+      <!-- Right: fenced content area -->
+      <div class="col-panel min-w-0 overflow-hidden p-2 min-h-48 flex flex-col">
+        <div class="flex-1 min-h-0 flex flex-col rounded-xl border border-gray-800 bg-gray-950 overflow-hidden">
+          <div class="flex items-center gap-2 border-b border-gray-800 px-3 py-2">
+            <span id="content-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="content-file" class="text-xs font-mono text-gray-400">content.md</span>
+            <span id="content-status" class="ml-auto text-[10px] uppercase tracking-wider text-gray-600">preview</span>
+          </div>
+          <div id="content-body" class="flex-1 flex items-center justify-center p-6 overflow-y-auto">
+            <div class="border border-dashed border-gray-700 rounded-lg px-8 py-10 text-center">
+              <div class="text-gray-500 text-sm">Agent content renders here</div>
+              <div class="text-gray-600 text-xs mt-1 font-mono">awaiting output…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div class="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden">
+      <div class="flex items-center justify-between border-b border-gray-800 px-4 py-2.5">
+        <span class="text-xs font-mono text-gray-400">settings.yaml</span>
+        <button id="settings-close" aria-label="Close settings" class="text-gray-500 hover:text-gray-200 transition-colors">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <textarea id="settings-yaml" spellcheck="false"
+        class="w-full h-64 bg-gray-950 text-gray-200 font-mono text-xs leading-relaxed p-4 outline-none resize-none"></textarea>
+      <div class="flex justify-end gap-2 border-t border-gray-800 px-4 py-2.5">
+        <button id="settings-cancel" class="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors">Cancel</button>
+        <button id="settings-save" class="px-3 py-1.5 rounded-lg text-xs bg-blue-500 hover:bg-blue-400 text-white transition-colors">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Resizable / collapsible columns ---
+    const grid = document.getElementById('col-grid');
+    const handles = [...grid.querySelectorAll('.col-handle')];
+    const panels = [...grid.querySelectorAll('.col-panel')];
+    const mql = window.matchMedia('(min-width: 768px)');
+    const MIN_FR = 0.5;
+    const CLICK_THRESHOLD = 4; // px before a press becomes a drag
+    let widths = [1, 2, 2];
+    let collapsed = [false, false, false]; // only side panels (0, 2) are collapsible
+
+    function apply() {
+      if (mql.matches) {
+        const w = widths.map((v, i) => (collapsed[i] ? 0 : v));
+        grid.style.gridTemplateColumns =
+          `${w[0]}fr 12px ${w[1]}fr 12px ${w[2]}fr`;
+      } else {
+        grid.style.gridTemplateColumns = '';
+      }
+      panels.forEach((p, i) => {
+        p.style.padding = mql.matches && collapsed[i] ? '0' : '';
+      });
+      handles.forEach((h) => {
+        const isCollapsed = collapsed[Number(h.dataset.side)];
+        h.querySelector('.collapse-label').classList.toggle('hidden', !isCollapsed);
+      });
+    }
+    mql.addEventListener('change', apply);
+    apply();
+
+    handles.forEach((handle) => {
+      handle.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const l = Number(handle.dataset.left);
+        const r = Number(handle.dataset.right);
+        const side = Number(handle.dataset.side);
+        const startX = e.clientX;
+        const startWidths = [...widths];
+        const canDrag = !collapsed[l] && !collapsed[r];
+        let moved = false;
+
+        const handleSpace = handles.reduce((s, h) => s + h.offsetWidth, 0);
+        const totalFr = widths.reduce((s, w, i) => s + (collapsed[i] ? 0 : w), 0);
+        const pxPerFr = (grid.clientWidth - handleSpace) / totalFr;
+
+        handle.setPointerCapture(e.pointerId);
+        document.body.classList.add('select-none');
+        if (canDrag) document.body.classList.add('cursor-col-resize');
+
+        function onMove(ev) {
+          if (!canDrag) return;
+          if (!moved && Math.abs(ev.clientX - startX) < CLICK_THRESHOLD) return;
+          moved = true;
+          const deltaFr = (ev.clientX - startX) / pxPerFr;
+          let d = Math.max(deltaFr, -(startWidths[l] - MIN_FR));
+          d = Math.min(d, startWidths[r] - MIN_FR);
+          widths = [...startWidths];
+          widths[l] = startWidths[l] + d;
+          widths[r] = startWidths[r] - d;
+          apply();
+        }
+        function onUp() {
+          handle.removeEventListener('pointermove', onMove);
+          document.body.classList.remove('select-none', 'cursor-col-resize');
+          if (!moved) {
+            collapsed[side] = !collapsed[side];
+            apply();
+          }
+        }
+
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', onUp, { once: true });
+        handle.addEventListener('pointercancel', onUp, { once: true });
+      });
+    });
+
+    // --- Composer ---
+    const chat = document.getElementById('chat');
+    const composer = document.getElementById('composer');
+    const input = document.getElementById('composer-input');
+    const MAX_INPUT_HEIGHT = 160; // px
+
+    function scrollChat() {
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function autoresize() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, MAX_INPUT_HEIGHT) + 'px';
+    }
+    input.addEventListener('input', autoresize);
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        composer.requestSubmit();
+      }
+      // Shift+Enter falls through and inserts a newline
+    });
+
+    composer.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'flex justify-end';
+      const inner = document.createElement('div');
+      inner.className = 'bg-gray-800 text-gray-100 rounded-3xl px-4 py-2.5 max-w-[85%] whitespace-pre-wrap';
+      inner.textContent = text;
+      bubble.appendChild(inner);
+      chat.appendChild(bubble);
+
+      input.value = '';
+      autoresize();
+      scrollChat();
+
+      // Placeholder agent reply
+      setTimeout(() => {
+        const reply = document.createElement('div');
+        reply.className = 'flex gap-3';
+        reply.innerHTML = `
+          <span class="bg-gradient-to-br from-blue-400 to-purple-400 bg-clip-text text-transparent select-none mt-0.5">✦</span>
+          <div class="text-gray-300 leading-relaxed"><p>This is a placeholder response — wire me up to a real agent.</p></div>`;
+        chat.appendChild(reply);
+        scrollChat();
+      }, 800);
+    });
+
+    // --- Header: session name ---
+    const nameInput = document.getElementById('session-name');
+
+    function fitName() {
+      nameInput.size = Math.max(nameInput.value.length, 4);
+    }
+    nameInput.addEventListener('input', fitName);
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') nameInput.blur();
+    });
+    fitName();
+
+    // --- Settings modal ---
+    const modal = document.getElementById('settings-modal');
+    const yaml = document.getElementById('settings-yaml');
+
+    const YAML_TEMPLATE = (name) => `theme: dark
+session:
+  name: ${name}
+layout:
+  columns: [1, 2, 2]
+  collapsible: true
+composer:
+  shift_enter_newline: true
+`;
+
+    function openSettings() {
+      yaml.value = YAML_TEMPLATE(nameInput.value.trim() || 'Untitled Session');
+      modal.classList.remove('hidden');
+      yaml.focus();
+    }
+    function closeSettings() {
+      modal.classList.add('hidden');
+    }
+
+    document.getElementById('settings-open').addEventListener('click', openSettings);
+    document.getElementById('settings-close').addEventListener('click', closeSettings);
+    document.getElementById('settings-cancel').addEventListener('click', closeSettings);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeSettings();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeSettings();
+    });
+
+    document.getElementById('settings-save').addEventListener('click', () => {
+      const match = yaml.value.match(/^\s*name:\s*(.+)$/m);
+      if (match) {
+        nameInput.value = match[1].replace(/^["']|["']$/g, '').trim() || 'Untitled Session';
+        fitName();
+      }
+      closeSettings();
+    });
+
+    // --- Edit approval flow ---
+    const pendingEdit = document.getElementById('pending-edit');
+    const contentBody = document.getElementById('content-body');
+    const contentFile = document.getElementById('content-file');
+    const contentStatus = document.getElementById('content-status');
+    const contentDot = document.getElementById('content-dot');
+
+    const defaultBodyClass = contentBody.className;
+    const defaultBodyHTML = contentBody.innerHTML;
+
+    const DIFF = [
+      { t: 'f', s: '--- a/src/TodoItem.tsx' },
+      { t: 'f', s: '+++ b/src/TodoItem.tsx' },
+      { t: '@', s: '@@ -12,7 +12,12 @@ export function TodoItem({ todo, onDelete, onToggle }: Props) {' },
+      { t: ' ', s: '   return (' },
+      { t: ' ', s: '     <li className="flex items-center gap-2">' },
+      { t: '-', s: '-      <span>{todo.text}</span>' },
+      { t: '+', s: '+      <input' },
+      { t: '+', s: '+        type="checkbox"' },
+      { t: '+', s: '+        checked={todo.done}' },
+      { t: '+', s: '+        onChange={() => onToggle(todo.id)}' },
+      { t: '+', s: '+        aria-label="Mark complete"' },
+      { t: '+', s: '+      />' },
+      { t: '+', s: '+      <span className={todo.done ? \'line-through text-gray-500\' : \'\'}>' },
+      { t: '+', s: '+        {todo.text}' },
+      { t: '+', s: '+      </span>' },
+      { t: ' ', s: '       <button onClick={() => onDelete(todo.id)}>Delete</button>' },
+      { t: ' ', s: '     </li>' },
+      { t: ' ', s: '   );' },
+    ];
+
+    const DIFF_CLASSES = {
+      'f': 'text-gray-600',
+      '@': 'text-blue-300/80 bg-blue-500/5',
+      '+': 'bg-emerald-500/10 text-emerald-300',
+      '-': 'bg-red-500/10 text-red-300',
+      ' ': 'text-gray-400',
+    };
+
+    function showApproval() {
+      contentFile.textContent = 'src/TodoItem.tsx';
+      contentStatus.textContent = 'pending approval';
+      contentStatus.className = 'ml-auto text-[10px] uppercase tracking-wider text-yellow-400';
+      contentDot.className = 'w-2 h-2 rounded-full bg-yellow-400 animate-pulse';
+
+      contentBody.className = 'flex-1 overflow-y-auto p-4 flex flex-col gap-4';
+      contentBody.innerHTML = `
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">What</div>
+          <p class="text-sm text-gray-200 leading-relaxed">Add a completion checkbox to each todo row and strike through the text of completed items.</p>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Why</div>
+          <p class="text-sm text-gray-400 leading-relaxed">This is the last piece of the "mark as complete" feature — the <code class="bg-gray-800 text-gray-200 rounded px-1 py-0.5 text-xs">toggleTodo</code> action already exists in App.tsx, it just isn't wired to the UI yet.</p>
+        </div>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Diff</div>
+          <div id="diff-view" class="rounded-lg border border-gray-800 bg-gray-950 py-2 font-mono text-xs leading-5 overflow-x-auto"></div>
+        </div>
+        <div class="flex justify-end">
+          <button id="approve-edit" class="px-3 py-1.5 rounded-lg text-xs bg-emerald-500 hover:bg-emerald-400 text-white transition-colors">Approve</button>
+        </div>
+      `;
+
+      const diffView = document.getElementById('diff-view');
+      DIFF.forEach(({ t, s }) => {
+        const row = document.createElement('div');
+        row.className = `px-3 whitespace-pre ${DIFF_CLASSES[t]}`;
+        row.textContent = s;
+        diffView.appendChild(row);
+      });
+
+      document.getElementById('approve-edit').addEventListener('click', resolveEdit);
+    }
+
+    function resolveEdit() {
+      // Action entry returns to a completed-state row
+      pendingEdit.disabled = true;
+      pendingEdit.className = 'px-2.5 py-1.5 text-gray-400';
+      pendingEdit.innerHTML = '<span><span class="font-semibold italic">Edit</span> TodoItem.tsx</span>';
+      pendingEdit.removeEventListener('click', showApproval);
+
+      // Content panel returns to placeholder
+      contentFile.textContent = 'content.md';
+      contentStatus.textContent = 'applied ✓';
+      contentStatus.className = 'ml-auto text-[10px] uppercase tracking-wider text-emerald-400';
+      contentDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+      contentBody.className = defaultBodyClass;
+      contentBody.innerHTML = defaultBodyHTML;
+    }
+
+    pendingEdit.addEventListener('click', showApproval);
+  </script>
+</body>
+</html>

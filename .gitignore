@@ -1,0 +1,16 @@
+# Build
+/build/bin
+/frontend/dist
+/frontend/node_modules
+/custard
+
+# Pi sidecar artifacts
+/pi-extension/node_modules
+/build/sidecar
+
+# OS
+.DS_Store
+
+# Go
+*.test
+*.out
