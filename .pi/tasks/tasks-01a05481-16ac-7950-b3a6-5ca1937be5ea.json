@@ -29,13 +29,13 @@
       "id": "3",
       "subject": "Spike pi single-binary bundling",
       "description": "Timeboxed experiment: compile pi (Node program) into a single executable — try bun build --compile first, Node SEA + postject as fallback. Verify the binary runs `pi --mode rpc` and answers get_state. Document the chosen approach + build script location. Fallback if both fail: ship node runtime + JS bundle.",
-      "status": "pending",
+      "status": "completed",
       "activeForm": "Spiking pi binary bundling",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841154,
-      "updatedAt": 1788127841154
+      "updatedAt": 1788128214545
     },
     {
       "id": "4",
