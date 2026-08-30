@@ -1,0 +1,185 @@
+/**
+ * Mirror of internal/protocol/protocol.go — keep in sync manually.
+ * See PLAN.md §4-5 and the Go package doc for semantic notes
+ * (cumulative stream payloads; approve-only decisions).
+ */
+
+// ---------------------------------------------------------------------------
+// Envelopes
+// ---------------------------------------------------------------------------
+
+export interface Command {
+  type: 'command'
+  id: string
+  name: string
+  payload?: unknown
+}
+
+export interface CommandResponse<T = unknown> {
+  type: 'command_response'
+  commandId: string
+  ok: boolean
+  payload?: T
+  error?: { code: string; message: string }
+}
+
+export interface BackendEvent<T = unknown> {
+  type: 'event'
+  seq: number
+  name: string
+  payload?: T
+  timestamp: number
+  correlationId?: string
+}
+
+export interface StreamMessage<T = unknown> {
+  type: 'stream'
+  name: string
+  payload?: T
+}
+
+export interface SnapshotMessage {
+  type: 'snapshot'
+  seq: number
+  state: SnapshotState
+}
+
+export interface ErrorMessage {
+  type: 'error'
+  code: string
+  message: string
+}
+
+export type BackendMessage = BackendEvent | StreamMessage | SnapshotMessage | ErrorMessage
+
+// ---------------------------------------------------------------------------
+// Command names
+// ---------------------------------------------------------------------------
+
+export const Cmd = {
+  SessionRestore: 'session.restore',
+  SessionRename: 'session.rename',
+  WorkspacePick: 'workspace.pick',
+  WorkspaceSet: 'workspace.set',
+  AgentStart: 'agent.start',
+  AgentCancel: 'agent.cancel',
+  ApprovalRespond: 'agent.approval.respond',
+  SettingsGet: 'settings.get',
+  SettingsSave: 'settings.save',
+} as const
+
+// ---------------------------------------------------------------------------
+// Event names
+// ---------------------------------------------------------------------------
+
+export const Ev = {
+  SessionRestored: 'session.restored',
+  WorkspaceChanged: 'workspace.changed',
+  AgentStarted: 'agent.started',
+  AgentStatusChanged: 'agent.status.changed',
+  AgentMessage: 'agent.message.appended',
+  AgentToolStarted: 'agent.tool.started',
+  AgentToolCompleted: 'agent.tool.completed',
+  ApprovalRequested: 'agent.approval.requested',
+  ApprovalResolved: 'agent.approval.resolved',
+  AgentCompleted: 'agent.completed',
+  AgentFailed: 'agent.failed',
+  SidecarLost: 'agent.sidecar.lost',
+  ContentUpdated: 'content.updated',
+  SettingsChanged: 'settings.changed',
+  Notification: 'notification.created',
+} as const
+
+export const Stream = {
+  AgentToken: 'agent.token',
+  ToolOutput: 'agent.tool.output',
+} as const
+
+// ---------------------------------------------------------------------------
+// Domain view models
+// ---------------------------------------------------------------------------
+
+export type AgentStatus = 'idle' | 'thinking' | 'streaming' | 'awaiting_approval' | 'error'
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  streaming?: boolean
+}
+
+export type ToolCallStatus = 'running' | 'done' | 'error' | 'pending_approval'
+
+export interface ToolCall {
+  id: string
+  tool: string
+  label: string
+  path?: string
+  status: ToolCallStatus
+  approvalId?: string
+}
+
+export interface ApprovalRequest {
+  id: string
+  kind: 'propose_edit' | 'bash'
+  title: string
+  path?: string
+  what?: string
+  why?: string
+  diff?: string
+  command?: string
+}
+
+export interface ContentDoc {
+  path: string
+  content: string
+  updatedAt: number
+}
+
+export interface WorkspaceInfo {
+  path: string
+  name: string
+}
+
+export interface Settings {
+  provider: string
+  apiKeyConfigured: boolean
+  model?: string
+  bashWhitelist: string[]
+  workspacePath: string
+  sessionName: string
+  lastSessionFile?: string
+}
+
+export interface AgentState {
+  status: AgentStatus
+  messages: ChatMessage[]
+  toolCalls: ToolCall[]
+}
+
+export interface SnapshotState {
+  sessionName: string
+  workspace: WorkspaceInfo
+  agent: AgentState
+  content: ContentDoc | null
+  pendingApprovals: ApprovalRequest[]
+  settings: Settings
+}
+
+export interface TokenPayload {
+  messageId: string
+  text: string // cumulative
+}
+
+export type ApprovalDecision = 'allow' | 'dismiss'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let cmdCounter = 0
+
+export function makeCommand(name: string, payload?: unknown): Command {
+  cmdCounter += 1
+  return { type: 'command', id: `cmd_${Date.now()}_${cmdCounter}`, name, payload }
+}

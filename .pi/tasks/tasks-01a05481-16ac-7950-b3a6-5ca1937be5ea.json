@@ -41,13 +41,13 @@
       "id": "4",
       "subject": "Implement protocol package (Go + TS mirror)",
       "description": "internal/protocol: envelope, command/event/snapshot/stream message types per PLAN.md §4-5, v1 command set (session.restore, session.rename, workspace.pick/set, agent.start, agent.cancel, agent.approval.respond, settings.get/save) and event set (agent.*, content.updated, settings.changed, notification.created). TS mirror in frontend/src/protocol.ts.",
-      "status": "pending",
+      "status": "in_progress",
       "activeForm": "Implementing protocol package",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841154,
-      "updatedAt": 1788127841154
+      "updatedAt": 1788128217824
     },
     {
       "id": "5",
