@@ -34,6 +34,13 @@ type Response struct {
 }
 
 // Client is a single pi sidecar session. Not safe to reuse after exit.
+// pendingResult is delivered to a command waiter: exactly one of
+// resp/err is meaningful. failAllPending uses err; normal routing uses resp.
+type pendingResult struct {
+	resp Response
+	err  error
+}
+
 type Client struct {
 	stdin  io.WriteCloser
 	stdout io.Reader
@@ -42,7 +49,7 @@ type Client struct {
 	writeMu sync.Mutex
 
 	pendingMu sync.Mutex
-	pending   map[string]chan Response
+	pending   map[string]chan pendingResult
 
 	nextID atomic.Uint64
 
@@ -75,7 +82,7 @@ func NewWithPipes(stdin io.WriteCloser, stdout io.Reader) *Client {
 	c := &Client{
 		stdin:    stdin,
 		stdout:   stdout,
-		pending:  make(map[string]chan Response),
+		pending:  make(map[string]chan pendingResult),
 		events:   make(chan Event, 256),
 		exited:   make(chan struct{}),
 		readDone: make(chan struct{}),
@@ -104,7 +111,7 @@ func (c *Client) Command(ctx context.Context, name string, fields map[string]any
 		obj[k] = v
 	}
 
-	ch := make(chan Response, 1)
+	ch := make(chan pendingResult, 1)
 	c.pendingMu.Lock()
 	if c.isClosedLocked() {
 		c.pendingMu.Unlock()
@@ -119,8 +126,8 @@ func (c *Client) Command(ctx context.Context, name string, fields map[string]any
 	}
 
 	select {
-	case resp := <-ch:
-		return resp, nil
+	case res := <-ch:
+		return res.resp, res.err
 	case <-ctx.Done():
 		c.dropPending(id)
 		return Response{}, ctx.Err()
@@ -226,7 +233,7 @@ func (c *Client) route(line []byte) {
 		}
 		c.pendingMu.Unlock()
 		if ok {
-			ch <- resp
+			ch <- pendingResult{resp: resp}
 		}
 		// Responses for ids we are not waiting on (e.g. aborted waits)
 		// are dropped by design.
@@ -250,7 +257,7 @@ func (c *Client) failAllPending(err error) {
 	c.pendingMu.Lock()
 	defer c.pendingMu.Unlock()
 	for id, ch := range c.pending {
-		ch <- Response{ID: id, Success: false, Err: err.Error()}
+		ch <- pendingResult{err: err}
 		delete(c.pending, id)
 	}
 }

@@ -125,25 +125,25 @@
       "id": "11",
       "subject": "End-to-end integration with real pi",
       "description": "Launch app against real pi sidecar with isolated config: full flow — workspace pick, prompt, streaming chat, tool log, propose_edit approval, write_content rendering, cancel, session restore. Resilience: sidecar crash → agent.sidecar.lost + restart; seq gap recovery. Fix all integration bugs.",
-      "status": "pending",
-      "activeForm": "Integrating with real pi",
+      "status": "completed",
+      "activeForm": "Verifying real-pi integration",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841156,
-      "updatedAt": 1788127841156
+      "updatedAt": 1788130574186
     },
     {
       "id": "12",
       "subject": "Tests + macOS packaging",
       "description": "Go unit tests (protocol codec, normalizer, sequencer, snapshot, whitelist policy); integration test driving core against fakepi scenario; vitest for UIStore reducers. wails build for macOS with embedded frontend dist + bundled pi binary + extension; verify .app launches standalone.",
-      "status": "pending",
-      "activeForm": "Testing and packaging",
+      "status": "in_progress",
+      "activeForm": "Writing frontend tests and packaging",
       "metadata": {},
       "blocks": [],
       "blockedBy": [],
       "createdAt": 1788127841156,
-      "updatedAt": 1788127841156
+      "updatedAt": 1788130574187
     }
   ]
 }
