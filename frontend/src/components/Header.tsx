@@ -39,7 +39,9 @@ export function Header({ client }: { client: BackendClient }) {
   }
 
   return (
-    <div className="flex items-center gap-2 px-2 pt-1 pb-2 mb-1 border-b border-gray-800">
+    // pl-[76px]: the window's traffic-light buttons float over the top-left
+    // (hidden titlebar); drag-region makes the strip drag the window.
+    <div className="drag-region flex items-center gap-2 pl-[76px] pr-2 pt-1 pb-2 mb-1 border-b border-gray-800">
       <input
         ref={inputRef}
         defaultValue={agentName}
@@ -51,13 +53,13 @@ export function Header({ client }: { client: BackendClient }) {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         }}
         onInput={fitName}
-        className="min-w-0 bg-transparent text-sm text-gray-200 rounded-md px-1.5 py-0.5 border border-transparent hover:border-gray-700 hover:bg-gray-800 focus:border-gray-600 focus:bg-gray-800 outline-none transition-colors"
+        className="no-drag min-w-0 bg-transparent text-sm text-gray-200 rounded-md px-1.5 py-0.5 border border-transparent hover:border-gray-700 hover:bg-gray-800 focus:border-gray-600 focus:bg-gray-800 outline-none transition-colors"
       />
       <button
         aria-label="Agents and sessions"
         title="Switch agent or open a previous session"
         onClick={openAgents}
-        className="shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -67,7 +69,7 @@ export function Header({ client }: { client: BackendClient }) {
         aria-label="New session"
         title="New session (current transcript stays on disk)"
         onClick={resetSession}
-        className="shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path
@@ -81,7 +83,7 @@ export function Header({ client }: { client: BackendClient }) {
       <button
         onClick={pickWorkspace}
         title={workspace ? `${workspace.path} — click to change` : 'Choose a workspace folder'}
-        className="flex items-center gap-2 min-w-0 rounded-md px-1.5 py-0.5 hover:bg-gray-800 transition-colors group"
+        className="no-drag flex items-center gap-2 min-w-0 rounded-md px-1.5 py-0.5 hover:bg-gray-800 transition-colors group"
       >
         <svg
           className="w-3.5 h-3.5 shrink-0 text-gray-600 group-hover:text-gray-400"
@@ -103,7 +105,7 @@ export function Header({ client }: { client: BackendClient }) {
       <button
         aria-label="Open settings"
         onClick={() => store.setSettingsOpen(true)}
-        className="ml-auto shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag ml-auto shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path

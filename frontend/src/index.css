@@ -9,3 +9,13 @@ html, body, #root {
   overscroll-behavior: none;
   user-select: none;
 }
+
+/* macOS hidden-titlebar integration: the header row acts as the window
+   drag region (Wails watches the --wails-draggable computed property,
+   which inherits — so interactive elements inside must opt back out). */
+.drag-region {
+  --wails-draggable: drag;
+}
+.no-drag {
+  --wails-draggable: no-drag;
+}

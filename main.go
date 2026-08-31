@@ -6,6 +6,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend/dist
@@ -26,6 +27,13 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 3, G: 7, B: 18, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		Mac: &mac.Options{
+			// VSCode/Zed look: no native titlebar; traffic lights float
+			// over the content, which extends to the window's top edge.
+			// The frontend header is the drag region (--wails-draggable).
+			TitleBar:   mac.TitleBarHidden(),
+			Appearance: mac.NSAppearanceNameDarkAqua,
+		},
 		Bind: []interface{}{
 			app,
 		},
