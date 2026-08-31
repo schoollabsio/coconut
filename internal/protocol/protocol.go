@@ -88,8 +88,9 @@ const (
 	CmdAgentStart      = "agent.start"
 	CmdAgentCancel     = "agent.cancel"
 	CmdApprovalRespond = "agent.approval.respond"
-	CmdSettingsGet     = "settings.get"
-	CmdSettingsSave    = "settings.save"
+	CmdSettingsGet      = "settings.get"
+	CmdSettingsSave     = "settings.save"
+	CmdSettingsValidate = "settings.validate"
 )
 
 // ---------------------------------------------------------------------------
@@ -147,25 +148,30 @@ type ApprovalRespondPayload struct {
 	Decision   string `json:"decision"` // DecisionAllow | DecisionDismiss
 }
 
-// Settings is the app-level persisted configuration. APIKey is
-// write-only: responses carry APIKeyConfigured and never the key.
-type Settings struct {
-	Provider         string   `json:"provider"`         // e.g. "anthropic", "openai", "google"
-	APIKey           string   `json:"apiKey,omitempty"` // accepted on save; never emitted
-	APIKeyConfigured bool     `json:"apiKeyConfigured"` // emitted on get/snapshot
-	Model            string   `json:"model,omitempty"`  // optional model pattern/ID
-	BashWhitelist    []string `json:"bashWhitelist"`    // command prefixes allowed without approval
-	WorkspacePath    string   `json:"workspacePath"`    // last used workspace
-	SessionName      string   `json:"sessionName"`      // display name (mirrors pi session name)
-	LastSessionFile  string   `json:"lastSessionFile,omitempty"`
+// SettingsYAMLPayload carries the raw settings.yaml text. The frontend
+// edits YAML directly; the backend owns parsing and validation.
+type SettingsYAMLPayload struct {
+	YAML string `json:"yaml"`
 }
 
 type SettingsSavePayload struct {
-	Provider      string   `json:"provider"`
-	APIKey        string   `json:"apiKey,omitempty"` // empty = keep existing
-	ClearAPIKey   bool     `json:"clearApiKey,omitempty"`
-	Model         string   `json:"model,omitempty"`
-	BashWhitelist []string `json:"bashWhitelist"`
+	YAML string `json:"yaml"`
+}
+
+type SettingsValidatePayload struct {
+	YAML string `json:"yaml"`
+}
+
+// ConfigProblem is one settings validation finding; "error" blocks saving,
+// "warning" is informational.
+type ConfigProblem struct {
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
+type SettingsValidateResult struct {
+	Valid    bool            `json:"valid"`
+	Problems []ConfigProblem `json:"problems"`
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +259,7 @@ type SnapshotState struct {
 	Agent            AgentState        `json:"agent"`
 	Content          *ContentDoc       `json:"content"`
 	PendingApprovals []ApprovalRequest `json:"pendingApprovals"`
-	Settings         Settings          `json:"settings"`
+	SettingsYAML     string            `json:"settingsYaml"`
 }
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,9 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 	case protocol.CmdApprovalRespond:
 		e.cmdApprovalRespond(cmd, respond)
 	case protocol.CmdSettingsGet:
-		respond <- respondOK(cmd, e.state.settings.public())
+		respond <- respondOK(cmd, protocol.SettingsYAMLPayload{YAML: e.state.settingsRaw})
+	case protocol.CmdSettingsValidate:
+		e.cmdSettingsValidate(cmd, respond)
 	case protocol.CmdSettingsSave:
 		e.cmdSettingsSave(cmd, respond)
 	default:
@@ -92,9 +94,8 @@ func (e *Engine) cmdSessionRename(cmd protocol.Command, respond chan []byte) {
 		return
 	}
 	e.state.sessionName = p.Name
-	e.state.settings.SessionName = p.Name
-	_ = saveSettings(e.cfg.ConfigDir, e.state.settings)
-	e.emitEvent(protocol.EvSettingsChanged, e.state.settings.public(), cmd.ID)
+	e.state.app.SessionName = p.Name
+	_ = saveState(e.cfg.ConfigDir, e.state.app)
 
 	if !e.piUp {
 		respond <- respondOK(cmd, nil)
@@ -147,8 +148,8 @@ func (e *Engine) cmdWorkspaceSet(cmd protocol.Command, respond chan []byte) {
 	e.state.resetAgent()
 	e.state.content = nil
 	e.state.workspacePath = p.Path
-	e.state.settings.WorkspacePath = p.Path
-	_ = saveSettings(e.cfg.ConfigDir, e.state.settings)
+	e.state.app.WorkspacePath = p.Path
+	_ = saveState(e.cfg.ConfigDir, e.state.app)
 	e.emitEvent(protocol.EvWorkspaceChanged, e.state.workspaceInfo(), cmd.ID)
 
 	e.startSidecarLocked(true, func(err error) {
@@ -254,24 +255,50 @@ func (e *Engine) cmdApprovalRespond(cmd protocol.Command, respond chan []byte) {
 // settings
 // ---------------------------------------------------------------------------
 
+// cmdSettingsValidate dry-runs the YAML through parse+validate.
+func (e *Engine) cmdSettingsValidate(cmd protocol.Command, respond chan []byte) {
+	var p protocol.SettingsValidatePayload
+	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+		respond <- respondErr(cmd, "bad_payload", "settings.validate needs {yaml}")
+		return
+	}
+	_, problems := parseSettingsYAML(p.YAML)
+	respond <- respondOK(cmd, protocol.SettingsValidateResult{
+		Valid:    !HasErrors(problems),
+		Problems: problems,
+	})
+}
+
+// cmdSettingsSave validates the submitted YAML and refuses to persist when
+// it contains errors (the frontend shows the problems and keeps the modal
+// open). On success the sidecar restarts so the new config takes effect.
 func (e *Engine) cmdSettingsSave(cmd protocol.Command, respond chan []byte) {
 	var p protocol.SettingsSavePayload
 	if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-		respond <- respondErr(cmd, "bad_payload", "settings.save payload invalid")
+		respond <- respondErr(cmd, "bad_payload", "settings.save needs {yaml}")
 		return
 	}
-	if err := e.state.settings.applySave(p); err != nil {
-		respond <- respondErr(cmd, "bad_payload", err.Error())
-		return
-	}
-	if err := saveSettings(e.cfg.ConfigDir, e.state.settings); err != nil {
+	cfg, problems, err := saveSettingsYAML(e.cfg.ConfigDir, p.YAML)
+	if err != nil {
 		respond <- respondErr(cmd, "persist_failed", err.Error())
 		return
 	}
-	e.emitEvent(protocol.EvSettingsChanged, e.state.settings.public(), cmd.ID)
+	if HasErrors(problems) {
+		b, _ := json.Marshal(protocol.CommandResponse{
+			Type:      "command_response",
+			CommandID: cmd.ID,
+			OK:        false,
+			Payload:   protocol.SettingsValidateResult{Valid: false, Problems: problems},
+			Error:     &protocol.ErrorInfo{Code: "validation_failed", Message: "settings validation failed"},
+		})
+		respond <- b
+		return
+	}
+	e.state.settings = cfg
+	e.state.settingsRaw = p.YAML
+	e.emitEvent(protocol.EvSettingsChanged, protocol.SettingsYAMLPayload{YAML: p.YAML}, cmd.ID)
 
-	// Launch-relevant settings changed (provider/key/model/whitelist);
-	// restart the sidecar so they take effect, keeping the session.
+	// Launch-relevant settings may have changed; restart the sidecar.
 	if e.piUp {
 		e.stopSidecarLocked()
 		e.state.resetAgent()
@@ -280,9 +307,9 @@ func (e *Engine) cmdSettingsSave(cmd protocol.Command, respond chan []byte) {
 				respond <- respondErr(cmd, "pi_start_failed", err.Error())
 				return
 			}
-			respond <- respondOK(cmd, e.state.settings.public())
+			respond <- respondOK(cmd, protocol.SettingsYAMLPayload{YAML: p.YAML})
 		})
 		return
 	}
-	respond <- respondOK(cmd, e.state.settings.public())
+	respond <- respondOK(cmd, protocol.SettingsYAMLPayload{YAML: p.YAML})
 }

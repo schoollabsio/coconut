@@ -9,7 +9,9 @@ import (
 
 // domainState is owned exclusively by the actor goroutine.
 type domainState struct {
-	settings persistedSettings
+	settings    Settings // parsed settings.yaml
+	settingsRaw string   // raw YAML text (round-trips comments)
+	app         appState // persisted app bookkeeping (state.json)
 
 	workspacePath string
 	sessionName   string
@@ -103,7 +105,7 @@ func (s *domainState) snapshot() protocol.SnapshotState {
 		Agent:            protocol.AgentState{Status: s.agentStatus, Messages: msgs, ToolCalls: calls},
 		Content:          content,
 		PendingApprovals: appr,
-		Settings:         s.settings.public(),
+		SettingsYAML:     s.settingsRaw,
 	}
 }
 

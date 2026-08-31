@@ -66,6 +66,7 @@ export const Cmd = {
   ApprovalRespond: 'agent.approval.respond',
   SettingsGet: 'settings.get',
   SettingsSave: 'settings.save',
+  SettingsValidate: 'settings.validate',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -141,14 +142,20 @@ export interface WorkspaceInfo {
   name: string
 }
 
-export interface Settings {
-  provider: string
-  apiKeyConfigured: boolean
-  model?: string
-  bashWhitelist: string[]
-  workspacePath: string
-  sessionName: string
-  lastSessionFile?: string
+/** One settings validation finding; "error" blocks saving. */
+export interface ConfigProblem {
+  severity: 'error' | 'warning'
+  message: string
+}
+
+export interface SettingsValidateResult {
+  valid: boolean
+  problems: ConfigProblem[]
+}
+
+/** settings.get response / settings.save request+response payload. */
+export interface SettingsYAML {
+  yaml: string
 }
 
 export interface AgentState {
@@ -163,7 +170,7 @@ export interface SnapshotState {
   agent: AgentState
   content: ContentDoc | null
   pendingApprovals: ApprovalRequest[]
-  settings: Settings
+  settingsYaml: string
 }
 
 export interface TokenPayload {

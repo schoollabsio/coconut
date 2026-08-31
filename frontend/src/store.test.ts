@@ -26,13 +26,7 @@ function snap(seq: number): SnapshotMessage {
       },
       content: null,
       pendingApprovals: [],
-      settings: {
-        provider: 'anthropic',
-        apiKeyConfigured: true,
-        bashWhitelist: ['ls'],
-        workspacePath: '/ws',
-        sessionName: 'Restored Session',
-      },
+      settingsYaml: 'provider: anthropic\n',
     },
   }
 }
@@ -45,8 +39,7 @@ describe('UIStore', () => {
     expect(s.state.lastBackendSeq).toBe(10)
     expect(s.state.connected).toBe(true)
     expect(s.state.agent.messages).toHaveLength(1)
-    expect(s.state.settings?.apiKeyConfigured).toBe(true)
-    expect(s.state.settings).not.toHaveProperty('apiKey')
+    expect(s.state.settingsYaml).toContain('anthropic')
   })
 
   it('applies sequenced events in order', () => {

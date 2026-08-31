@@ -14,7 +14,7 @@ import type {
   BackendMessage,
   ChatMessage,
   ContentDoc,
-  Settings,
+  SettingsYAML,
   SnapshotMessage,
   StreamMessage,
   ToolCall,
@@ -43,7 +43,8 @@ export interface UIState {
   pendingApprovals: ApprovalRequest[]
   /** Approval currently focused in the content panel (click in tool log). */
   focusedApprovalId: string | null
-  settings: Settings | null
+  /** Raw settings.yaml text; edited in the settings modal. */
+  settingsYaml: string | null
   settingsOpen: boolean
   notifications: Notification[]
 }
@@ -58,7 +59,7 @@ const initialState: UIState = {
   content: null,
   pendingApprovals: [],
   focusedApprovalId: null,
-  settings: null,
+  settingsYaml: null,
   settingsOpen: false,
   notifications: [],
 }
@@ -150,7 +151,7 @@ export class UIStore {
       },
       content: s.content,
       pendingApprovals: [...s.pendingApprovals],
-      settings: s.settings,
+      settingsYaml: s.settingsYaml,
     })
   }
 
@@ -230,11 +231,9 @@ export class UIStore {
       case Ev.ContentUpdated:
         this.set({ content: p as unknown as ContentDoc })
         break
-      case Ev.SettingsChanged: {
-        const settings = p as unknown as Settings
-        this.set({ settings, sessionName: settings.sessionName || this.state.sessionName })
+      case Ev.SettingsChanged:
+        this.set({ settingsYaml: (p as unknown as SettingsYAML).yaml })
         break
-      }
       case Ev.WorkspaceChanged:
         this.set({ workspace: p as unknown as WorkspaceInfo, needsWorkspace: false })
         break

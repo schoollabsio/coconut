@@ -20,6 +20,7 @@ type SidecarSettings struct {
 	Provider      string   // e.g. "anthropic"; empty = pi default
 	Model         string   // optional model pattern/ID
 	APIKey        string   // provider key; injected via env
+	APIKeyEnv     []string // env var names for the key; empty = use convention
 	BashWhitelist []string // extra prefixes for CUSTARD_BASH_WHITELIST
 	SessionName   string
 }
@@ -83,7 +84,11 @@ func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensi
 		env = append(env, "CUSTARD_BASH_WHITELIST="+strings.Join(s.BashWhitelist, ","))
 	}
 	if s.APIKey != "" {
-		for _, name := range providerKeyEnvVars(s.Provider) {
+		names := s.APIKeyEnv
+		if len(names) == 0 {
+			names = providerKeyEnvVars(s.Provider)
+		}
+		for _, name := range names {
 			env = append(env, name+"="+s.APIKey)
 		}
 	}

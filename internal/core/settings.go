@@ -1,21 +1,19 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/jschool/custard/internal/protocol"
+	"gopkg.in/yaml.v3"
 )
-
-// DefaultBashWhitelist mirrors the extension's read-only defaults; the
-// settings UI shows these as the baseline.
-var DefaultBashWhitelist = []string{
-	"ls", "grep", "find", "cat", "head", "tail", "pwd", "wc",
-	"file", "stat", "which", "echo",
-	"git status", "git diff", "git log", "git show", "git branch",
-}
 
 // ConfigDir resolves the app config directory. CUSTARD_CONFIG_DIR
 // overrides (dev/tests); otherwise os.UserConfigDir()/custard.
@@ -30,73 +28,389 @@ func ConfigDir() (string, error) {
 	return filepath.Join(base, "custard"), nil
 }
 
-// persistedSettings is the on-disk shape (includes the API key; file is
-// 0600 and app-owned).
-type persistedSettings struct {
-	Provider        string   `json:"provider"`
-	APIKey          string   `json:"apiKey,omitempty"`
-	Model           string   `json:"model,omitempty"`
-	BashWhitelist   []string `json:"bashWhitelist"`
-	WorkspacePath   string   `json:"workspacePath"`
-	SessionName     string   `json:"sessionName"`
-	LastSessionFile string   `json:"lastSessionFile,omitempty"`
+// DefaultBashWhitelist mirrors the extension's read-only defaults; the
+// default settings template includes these as the baseline.
+var DefaultBashWhitelist = []string{
+	"ls", "grep", "find", "cat", "head", "tail", "pwd", "wc",
+	"file", "stat", "which", "echo",
+	"git status", "git diff", "git log", "git show", "git branch",
 }
 
-func settingsPath(configDir string) string {
-	return filepath.Join(configDir, "settings.json")
+// ---------------------------------------------------------------------------
+// settings.yaml — user-editable configuration (validated)
+// ---------------------------------------------------------------------------
+
+// Settings is the parsed shape of settings.yaml. Provider endpoint
+// configuration (baseUrl, headers, api, apiKey, authHeader, models) is
+// translated into pi's models.json for the isolated sidecar config dir; a
+// top-level APIKey for a built-in provider is injected via env instead.
+type Settings struct {
+	Provider      string                      `yaml:"provider"`
+	Model         string                      `yaml:"model,omitempty"`
+	APIKey        string                      `yaml:"apiKey,omitempty"`
+	BashWhitelist []string                    `yaml:"bashWhitelist"`
+	Providers     map[string]ProviderSettings `yaml:"providers,omitempty"`
 }
 
-func loadSettings(configDir string) persistedSettings {
-	var s persistedSettings
-	b, err := os.ReadFile(settingsPath(configDir))
-	if err != nil {
-		return s // zero value; defaults applied by caller
+// ProviderSettings maps onto a pi models.json provider entry. Unknown keys
+// are captured in Extra and passed through to models.json untouched, so
+// advanced pi fields (oauth, compat, modelOverrides, …) stay available.
+type ProviderSettings struct {
+	Name       string            `yaml:"name,omitempty"`
+	BaseURL    string            `yaml:"baseUrl,omitempty"`
+	API        string            `yaml:"api,omitempty"`
+	APIKey     string            `yaml:"apiKey,omitempty"`
+	AuthHeader *bool             `yaml:"authHeader,omitempty"`
+	Headers    map[string]string `yaml:"headers,omitempty"`
+	Models     []map[string]any  `yaml:"models,omitempty"`
+	Extra      map[string]any    `yaml:",inline"`
+}
+
+// knownAPIs mirrors pi-ai's KnownApi type. Validated strictly because
+// custard launches pi with --no-extensions, so only built-in APIs can work.
+var knownAPIs = map[string]bool{
+	"openai-completions":      true,
+	"openai-responses":        true,
+	"azure-openai-responses":  true,
+	"openai-codex-responses":  true,
+	"anthropic-messages":      true,
+	"mistral-conversations":   true,
+	"bedrock-converse-stream": true,
+	"google-generative-ai":    true,
+	"google-vertex":           true,
+	"pi-messages":             true,
+}
+
+func knownAPIList() []string {
+	out := make([]string, 0, len(knownAPIs))
+	for a := range knownAPIs {
+		out = append(out, a)
 	}
-	_ = json.Unmarshal(b, &s)
-	return s
+	sort.Strings(out)
+	return out
 }
 
-func saveSettings(configDir string, s persistedSettings) error {
+// knownProviderEnv maps pi's built-in provider ids to the env vars pi
+// checks for credentials (mirrors pi-ai's env-api-keys). The LAST entry is
+// the canonical API-key variable. A nil slice means the provider uses
+// ambient credentials (e.g. AWS).
+var knownProviderEnv = map[string][]string{
+	"anthropic":                  {"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"},
+	"github-copilot":             {"COPILOT_GITHUB_TOKEN"},
+	"openai":                     {"OPENAI_API_KEY"},
+	"azure-openai-responses":     {"AZURE_OPENAI_API_KEY"},
+	"openai-codex":               {"OPENAI_CODEX_API_KEY"},
+	"google":                     {"GEMINI_API_KEY"},
+	"google-vertex":              {"GOOGLE_CLOUD_API_KEY"},
+	"groq":                       {"GROQ_API_KEY"},
+	"cerebras":                   {"CEREBRAS_API_KEY"},
+	"xai":                        {"XAI_API_KEY"},
+	"deepseek":                   {"DEEPSEEK_API_KEY"},
+	"nvidia":                     {"NVIDIA_API_KEY"},
+	"openrouter":                 {"OPENROUTER_API_KEY"},
+	"mistral":                    {"MISTRAL_API_KEY"},
+	"huggingface":                {"HF_TOKEN"},
+	"fireworks":                  {"FIREWORKS_API_KEY"},
+	"together":                   {"TOGETHER_API_KEY"},
+	"baseten":                    {"BASETEN_API_KEY"},
+	"opencode":                   {"OPENCODE_API_KEY"},
+	"opencode-go":                {"OPENCODE_API_KEY"},
+	"kimi-coding":                {"KIMI_API_KEY"},
+	"zai":                        {"ZAI_API_KEY"},
+	"zai-coding-cn":              {"ZAI_CODING_CN_API_KEY"},
+	"minimax":                    {"MINIMAX_API_KEY"},
+	"minimax-cn":                 {"MINIMAX_CN_API_KEY"},
+	"moonshotai":                 {"MOONSHOT_API_KEY"},
+	"moonshotai-cn":              {"MOONSHOT_API_KEY"},
+	"radius":                     {"RADIUS_API_KEY"},
+	"vercel-ai-gateway":          {"AI_GATEWAY_API_KEY"},
+	"ant-ling":                   {"ANT_LING_API_KEY"},
+	"cloudflare-workers-ai":      {"CLOUDFLARE_API_KEY"},
+	"cloudflare-ai-gateway":      {"CLOUDFLARE_API_KEY"},
+	"qwen-token-plan":            {"QWEN_TOKEN_PLAN_API_KEY"},
+	"qwen-token-plan-cn":         {"QWEN_TOKEN_PLAN_CN_API_KEY"},
+	"qwen-token-plan-individual": {"QWEN_TOKEN_PLAN_API_KEY"},
+	"xiaomi":                     {"XIAOMI_API_KEY"},
+	"xiaomi-token-plan-cn":       {"XIAOMI_TOKEN_PLAN_CN_API_KEY"},
+	"xiaomi-token-plan-ams":      {"XIAOMI_TOKEN_PLAN_AMS_API_KEY"},
+	"xiaomi-token-plan-sgp":      {"XIAOMI_TOKEN_PLAN_SGP_API_KEY"},
+	"amazon-bedrock":             nil, // ambient AWS credentials
+}
+
+func isKnownProvider(id string) bool {
+	_, ok := knownProviderEnv[id]
+	return ok
+}
+
+// Validate checks semantic correctness beyond YAML syntax. Errors block
+// saving; warnings are shown but do not block. env is the environment
+// lookup for credential checks (os.LookupEnv in prod).
+func (s *Settings) Validate(env func(string) (string, bool)) []protocol.ConfigProblem {
+	var out []protocol.ConfigProblem
+	prob := func(sev, format string, args ...any) {
+		out = append(out, protocol.ConfigProblem{Severity: sev, Message: fmt.Sprintf(format, args...)})
+	}
+
+	s.Provider = strings.TrimSpace(s.Provider)
+	if s.Provider == "" {
+		prob("error", "provider: required (a built-in like anthropic/openai, or a name defined under providers:)")
+	} else if !isKnownProvider(s.Provider) {
+		if _, defined := s.Providers[s.Provider]; !defined {
+			prob("error", "provider %q: not a built-in pi provider and not defined under providers:", s.Provider)
+		}
+	}
+
+	if s.Model != "" {
+		if strings.ContainsAny(s.Model, "\n\r") {
+			prob("error", "model: must be a single-line pattern")
+		} else if i := strings.Index(s.Model, "/"); i > 0 {
+			if prefix := s.Model[:i]; !isKnownProvider(prefix) {
+				if _, defined := s.Providers[prefix]; !defined {
+					prob("error", "model %q: unknown provider prefix %q", s.Model, prefix)
+				}
+			}
+		}
+	}
+
+	for i, w := range s.BashWhitelist {
+		if strings.TrimSpace(w) == "" {
+			prob("error", "bashWhitelist[%d]: empty entry", i)
+		}
+	}
+
+	ids := make([]string, 0, len(s.Providers))
+	for id := range s.Providers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		p := s.Providers[id]
+		custom := !isKnownProvider(id)
+
+		if p.BaseURL != "" {
+			u, err := url.Parse(p.BaseURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				prob("error", "providers.%s.baseUrl: %q is not a valid http(s) URL", id, p.BaseURL)
+			}
+		}
+		if p.API != "" && !knownAPIs[p.API] {
+			prob("error", "providers.%s.api: %q is not a pi api (valid: %s)", id, p.API, strings.Join(knownAPIList(), ", "))
+		}
+		for k := range p.Headers {
+			if strings.TrimSpace(k) == "" {
+				prob("error", "providers.%s.headers: empty header name", id)
+			}
+		}
+		for i, m := range p.Models {
+			mid, ok := m["id"].(string)
+			if !ok || strings.TrimSpace(mid) == "" {
+				prob("error", "providers.%s.models[%d]: missing model id", id, i)
+			}
+		}
+		if custom {
+			if p.BaseURL == "" {
+				prob("error", "providers.%s: baseUrl is required for a custom provider", id)
+			}
+			if p.API == "" {
+				prob("error", "providers.%s: api is required for a custom provider (e.g. openai-completions)", id)
+			}
+			if len(p.Models) == 0 {
+				prob("error", "providers.%s: custom providers need at least one models: entry (e.g. - id: my-model)", id)
+			}
+		}
+		for k := range p.Extra {
+			prob("warning", "providers.%s: unknown key %q (passed through to models.json)", id, k)
+		}
+	}
+
+	// Credential visibility check (warning only — a proxy may need no key,
+	// and OAuth/ambient setups are beyond our inspection).
+	if s.Provider != "" {
+		if p, overridden := s.Providers[s.Provider]; overridden {
+			if p.APIKey == "" && s.APIKey == "" {
+				prob("warning", "provider %q: no apiKey configured (fine if the endpoint needs no auth)", s.Provider)
+			}
+		} else if s.APIKey == "" {
+			if names, known := knownProviderEnv[s.Provider]; known {
+				if names == nil {
+					prob("warning", "provider %q uses ambient cloud credentials; make sure they exist in your shell", s.Provider)
+				} else {
+					found := false
+					for _, n := range names {
+						if v, ok := env(n); ok && v != "" {
+							found = true
+							break
+						}
+					}
+					if !found {
+						prob("warning", "provider %q: no API key configured — set apiKey or export %s", s.Provider, names[len(names)-1])
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// parseSettingsYAML decodes strictly: unknown top-level keys are rejected;
+// unknown provider-entry keys land in Extra (passed through to pi).
+func parseSettingsYAML(text string) (Settings, []protocol.ConfigProblem) {
+	var s Settings
+	dec := yaml.NewDecoder(bytes.NewReader([]byte(text)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&s); err != nil {
+		msg := strings.TrimPrefix(err.Error(), "yaml: ")
+		return Settings{}, []protocol.ConfigProblem{{Severity: "error", Message: "invalid config: " + msg}}
+	}
+	return s, s.Validate(os.LookupEnv)
+}
+
+// HasErrors reports whether any problem blocks saving.
+func HasErrors(ps []protocol.ConfigProblem) bool {
+	for _, p := range ps {
+		if p.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultSettingsYAML is written to settings.yaml on first run; its
+// comments double as the config documentation shown in the settings modal.
+var DefaultSettingsYAML = `# custard settings
+
+# Provider: a built-in pi provider (anthropic, openai, google, groq, mistral,
+# xai, openrouter, deepseek, github-copilot, ...) or a name you define under
+# "providers:" below.
+provider: anthropic
+
+# Model pattern (optional): bare id, provider/model, or provider/model:thinking.
+# model: claude-sonnet-4-5
+
+# API key for "provider". Stored in plaintext in this file (chmod 600).
+# Built-in providers can instead read their usual env var (e.g.
+# ANTHROPIC_API_KEY), which the sidecar inherits from your shell.
+apiKey: ""
+
+# Custom endpoints and headers. Entries are written to pi's models.json;
+# they can define new providers or override a built-in's endpoint.
+# providers:
+#   openrouter:
+#     baseUrl: https://openrouter.ai/api/v1
+#     api: openai-completions        # protocol the endpoint speaks
+#     apiKey: sk-or-...              # literal key (stored in models.json)
+#     authHeader: true               # send "Authorization: Bearer <apiKey>"
+#     headers:
+#       HTTP-Referer: https://example.com
+#     models:
+#       - id: anthropic/claude-sonnet-4
+#       - id: openai/gpt-5
+#         contextWindow: 200000
+#
+#   # Override a built-in's endpoint (e.g. a corporate proxy):
+#   anthropic:
+#     baseUrl: https://proxy.internal/anthropic
+#     headers:
+#       X-Tenant: blue
+
+# Bash command prefixes the agent may run without approval.
+bashWhitelist:
+  - ls
+  - cat
+  - git status
+  - git diff
+  - git log
+  - grep
+  - find
+  - head
+  - tail
+  - wc
+`
+
+func settingsPath(configDir string) string { return filepath.Join(configDir, "settings.yaml") }
+
+// loadSettingsYAML loads settings.yaml, creating it from the template when
+// missing. Returns the parsed config and the raw text (the settings modal
+// edits raw text so user comments survive). An invalid on-disk config falls
+// back to template defaults in memory while preserving the raw text.
+func loadSettingsYAML(configDir string) (Settings, string) {
+	data, err := os.ReadFile(settingsPath(configDir))
+	if errors.Is(err, os.ErrNotExist) {
+		data = []byte(DefaultSettingsYAML)
+		_ = os.WriteFile(settingsPath(configDir), data, 0o600)
+	}
+	cfg, problems := parseSettingsYAML(string(data))
+	if HasErrors(problems) {
+		cfg, _ = parseSettingsYAML(DefaultSettingsYAML)
+	}
+	if cfg.BashWhitelist == nil {
+		cfg.EnsureBashWhitelist(DefaultBashWhitelist...)
+	}
+	return cfg, string(data)
+}
+
+// saveSettingsYAML validates and, only when error-free, persists raw
+// (0600). Problems are returned either way.
+func saveSettingsYAML(configDir, raw string) (Settings, []protocol.ConfigProblem, error) {
+	cfg, problems := parseSettingsYAML(raw)
+	if HasErrors(problems) {
+		return Settings{}, problems, nil
+	}
+	if cfg.BashWhitelist == nil {
+		cfg.EnsureBashWhitelist(DefaultBashWhitelist...)
+	}
+	if err := os.WriteFile(settingsPath(configDir), []byte(raw), 0o600); err != nil {
+		return Settings{}, problems, fmt.Errorf("settings: write: %w", err)
+	}
+	return cfg, problems, nil
+}
+
+// EnsureBashWhitelist inserts missing prefixes (e.g. from
+// CUSTARD_BASH_WHITELIST) into the in-memory config only.
+func (s *Settings) EnsureBashWhitelist(prefixes ...string) {
+	seen := map[string]bool{}
+	for _, p := range s.BashWhitelist {
+		seen[p] = true
+	}
+	for _, p := range prefixes {
+		if !seen[p] {
+			s.BashWhitelist = append(s.BashWhitelist, p)
+			seen[p] = true
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// state.json — app-owned bookkeeping (not user-editable)
+// ---------------------------------------------------------------------------
+
+// appState is persisted app bookkeeping: the last workspace, the session
+// display name, and pi's session file (for restart restore).
+type appState struct {
+	WorkspacePath   string `json:"workspacePath"`
+	SessionName     string `json:"sessionName"`
+	LastSessionFile string `json:"lastSessionFile,omitempty"`
+}
+
+func statePath(configDir string) string { return filepath.Join(configDir, "state.json") }
+
+func loadState(configDir string) appState {
+	var st appState
+	b, err := os.ReadFile(statePath(configDir))
+	if err != nil {
+		return st
+	}
+	_ = json.Unmarshal(b, &st)
+	return st
+}
+
+func saveState(configDir string, st appState) error {
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(s, "", "  ")
+	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(settingsPath(configDir), b, 0o600)
-}
-
-// public converts to the wire shape: API key redacted, flag set.
-func (s persistedSettings) public() protocol.Settings {
-	return protocol.Settings{
-		Provider:         s.Provider,
-		APIKeyConfigured: s.APIKey != "",
-		Model:            s.Model,
-		BashWhitelist:    s.BashWhitelist,
-		WorkspacePath:    s.WorkspacePath,
-		SessionName:      s.SessionName,
-		LastSessionFile:  s.LastSessionFile,
-	}
-}
-
-// applySave merges a settings.save payload; empty APIKey keeps the
-// existing one unless ClearAPIKey is set.
-func (s *persistedSettings) applySave(p protocol.SettingsSavePayload) error {
-	if p.Provider == "" {
-		return errors.New("provider is required")
-	}
-	s.Provider = p.Provider
-	if p.ClearAPIKey {
-		s.APIKey = ""
-	} else if p.APIKey != "" {
-		s.APIKey = p.APIKey
-	}
-	s.Model = p.Model
-	if p.BashWhitelist == nil {
-		s.BashWhitelist = []string{}
-	} else {
-		s.BashWhitelist = p.BashWhitelist
-	}
-	return nil
+	return os.WriteFile(statePath(configDir), b, 0o600)
 }

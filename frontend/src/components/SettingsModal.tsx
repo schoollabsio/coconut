@@ -1,37 +1,58 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BackendClient } from '../backend'
-import { Cmd } from '../protocol'
+import { Cmd, type ConfigProblem, type SettingsValidateResult } from '../protocol'
 import { store, useUIState } from '../store'
 
-const PROVIDERS = ['anthropic', 'openai', 'google', 'openrouter', 'groq', 'mistral', 'xai']
+const VALIDATE_DEBOUNCE_MS = 350
 
 /**
- * Settings modal. The mockup edited raw settings.yaml; the real app owns
- * concrete settings (provider, API key, model, bash whitelist), so this
- * is a small form backed by settings.get / settings.save.
+ * Settings modal: raw settings.yaml editor with live backend validation.
+ * Errors block saving (Save disabled + save round-trip re-validates);
+ * warnings are shown but allow saving.
  */
 export function SettingsModal({ client }: { client: BackendClient }) {
   const open = useUIState((s) => s.settingsOpen)
-  const settings = useUIState((s) => s.settings)
 
-  const [provider, setProvider] = useState('anthropic')
-  const [apiKey, setApiKey] = useState('')
-  const [clearKey, setClearKey] = useState(false)
-  const [model, setModel] = useState('')
-  const [whitelist, setWhitelist] = useState('')
+  const [yaml, setYaml] = useState('')
+  const [problems, setProblems] = useState<ConfigProblem[]>([])
+  const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Refresh from the backend each time the modal opens.
+  // Monotonic token so stale validate responses never overwrite newer ones.
+  const validateSeq = useRef(0)
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const runValidation = (text: string) => {
+    const seq = ++validateSeq.current
+    setValidating(true)
+    void client
+      .command<SettingsValidateResult>(Cmd.SettingsValidate, { yaml: text })
+      .then((resp) => {
+        if (seq !== validateSeq.current) return
+        if (resp.ok && resp.payload) {
+          setProblems(resp.payload.problems ?? [])
+        } else {
+          setProblems([{ severity: 'error', message: resp.error?.message ?? 'validation failed' }])
+        }
+      })
+      .catch((err) => {
+        if (seq !== validateSeq.current) return
+        setProblems([{ severity: 'error', message: String(err) }])
+      })
+      .finally(() => {
+        if (seq === validateSeq.current) setValidating(false)
+      })
+  }
+
+  // Load current YAML each time the modal opens.
   useEffect(() => {
     if (!open) return
-    void client.command(Cmd.SettingsGet, {}).then((resp) => {
-      const s = (resp.ok && resp.payload ? resp.payload : settings) as typeof settings
-      if (!s) return
-      setProvider(s.provider || 'anthropic')
-      setModel(s.model ?? '')
-      setWhitelist((s.bashWhitelist ?? []).join('\n'))
-      setApiKey('')
-      setClearKey(false)
+    setSaveError(null)
+    void client.command<{ yaml: string }>(Cmd.SettingsGet, {}).then((resp) => {
+      const text = resp.ok && resp.payload ? resp.payload.yaml : '# failed to load settings\n'
+      setYaml(text)
+      runValidation(text)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -44,24 +65,38 @@ export function SettingsModal({ client }: { client: BackendClient }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
+  useEffect(() => () => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+  }, [])
+
   if (!open) return null
 
+  const onChange = (text: string) => {
+    setYaml(text)
+    setSaveError(null)
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => runValidation(text), VALIDATE_DEBOUNCE_MS)
+  }
+
+  const hasErrors = problems.some((p) => p.severity === 'error')
   const close = () => store.setSettingsOpen(false)
 
   const save = async () => {
+    if (hasErrors || validating || saving) return
     setSaving(true)
+    setSaveError(null)
     try {
-      await client.command(Cmd.SettingsSave, {
-        provider,
-        apiKey: apiKey || undefined,
-        clearApiKey: clearKey,
-        model: model || undefined,
-        bashWhitelist: whitelist
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean),
-      })
+      const resp = await client.command<SettingsValidateResult>(Cmd.SettingsSave, { yaml })
+      if (!resp.ok) {
+        // Backend re-validates authoritatively; surface its problems.
+        const serverProblems = resp.payload?.problems
+        if (serverProblems?.length) setProblems(serverProblems)
+        setSaveError(resp.error?.message ?? 'save failed')
+        return
+      }
       close()
+    } catch (err) {
+      setSaveError(String(err))
     } finally {
       setSaving(false)
     }
@@ -74,97 +109,66 @@ export function SettingsModal({ client }: { client: BackendClient }) {
         if (e.target === e.currentTarget) close()
       }}
     >
-      <div className="w-full max-w-lg rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2.5">
-          <span className="text-xs font-mono text-gray-400">settings</span>
-          <button aria-label="Close settings" onClick={close} className="text-gray-500 hover:text-gray-200 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+      <div className="w-full max-w-2xl rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2.5 shrink-0">
+          <span className="text-xs font-mono text-gray-400">settings.yaml</span>
+          <div className="flex items-center gap-2">
+            {validating && <span className="text-[10px] text-gray-500">validating…</span>}
+            <button aria-label="Close settings" onClick={close} className="text-gray-500 hover:text-gray-200 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div className="p-4 flex flex-col gap-4 text-sm">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400">Provider</span>
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className="bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-gray-200 outline-none focus:border-gray-600"
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
+        <textarea
+          value={yaml}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          aria-label="Settings YAML"
+          className="flex-1 min-h-72 bg-gray-950 px-4 py-3 text-gray-200 font-mono text-xs leading-relaxed outline-none resize-none"
+        />
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400">
-              API key{' '}
-              {settings?.apiKeyConfigured && !clearKey && (
-                <span className="text-emerald-400/80">(a key is saved — leave blank to keep it)</span>
-              )}
-            </span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value)
-                if (e.target.value) setClearKey(false)
-              }}
-              placeholder={settings?.apiKeyConfigured ? '••••••••' : 'paste your provider API key'}
-              spellCheck={false}
-              className="bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-gray-200 outline-none focus:border-gray-600 font-mono text-xs"
-            />
-            {settings?.apiKeyConfigured && (
-              <label className="flex items-center gap-1.5 text-xs text-gray-500">
-                <input type="checkbox" checked={clearKey} onChange={(e) => setClearKey(e.target.checked)} />
-                remove the saved key
-              </label>
+        {(problems.length > 0 || saveError) && (
+          <div className="border-t border-gray-800 px-4 py-2 max-h-36 overflow-y-auto shrink-0">
+            {saveError && (
+              <div className="flex gap-2 py-0.5 text-xs">
+                <span className="text-red-400 shrink-0">✕</span>
+                <span className="text-red-300">{saveError}</span>
+              </div>
             )}
-          </label>
+            {problems.map((p, i) => (
+              <div key={i} className="flex gap-2 py-0.5 text-xs">
+                <span className={`shrink-0 ${p.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {p.severity === 'error' ? '✕' : '⚠'}
+                </span>
+                <span className={p.severity === 'error' ? 'text-red-300' : 'text-yellow-200/80'}>{p.message}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400">Model (optional — pi pattern or ID)</span>
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. claude-sonnet-4-5 or openai/gpt-5:high"
-              spellCheck={false}
-              className="bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-gray-200 outline-none focus:border-gray-600 font-mono text-xs"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400">
-              Bash whitelist <span className="text-gray-600">— one command prefix per line; anything else needs approval</span>
-            </span>
-            <textarea
-              value={whitelist}
-              onChange={(e) => setWhitelist(e.target.value)}
-              rows={6}
-              spellCheck={false}
-              className="bg-gray-950 border border-gray-800 rounded-lg px-2.5 py-1.5 text-gray-200 outline-none focus:border-gray-600 font-mono text-xs leading-relaxed resize-none"
-            />
-          </label>
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-gray-800 px-4 py-2.5">
-          <button
-            onClick={close}
-            className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => void save()}
-            disabled={saving}
-            className="px-3 py-1.5 rounded-lg text-xs bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white transition-colors"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+        <div className="flex items-center justify-between border-t border-gray-800 px-4 py-2.5 shrink-0">
+          <span className="text-[10px] text-gray-600">
+            saving restarts the agent with the new config
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={close}
+              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void save()}
+              disabled={hasErrors || validating || saving}
+              title={hasErrors ? 'Fix the errors above to save' : undefined}
+              className="px-3 py-1.5 rounded-lg text-xs bg-blue-500 hover:bg-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

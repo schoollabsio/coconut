@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jschool/custard/internal/piadapter"
@@ -111,12 +112,16 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		conts:          map[int64]contEntry{},
 		pendingStreams: map[string]any{},
 	}
-	e.state.settings = loadSettings(cfg.ConfigDir)
-	if e.state.settings.BashWhitelist == nil {
-		e.state.settings.BashWhitelist = DefaultBashWhitelist
+	e.state.settings, e.state.settingsRaw = loadSettingsYAML(cfg.ConfigDir)
+	if extra := os.Getenv("CUSTARD_BASH_WHITELIST"); extra != "" {
+		e.state.settings.EnsureBashWhitelist(strings.Split(extra, ",")...)
 	}
-	e.state.workspacePath = e.state.settings.WorkspacePath
-	e.state.sessionName = e.state.settings.SessionName
+	e.state.app = loadState(cfg.ConfigDir)
+	if e.state.app.SessionName == "" {
+		e.state.app.SessionName = "Untitled Session"
+	}
+	e.state.workspacePath = e.state.app.WorkspacePath
+	e.state.sessionName = e.state.app.SessionName
 	return e, nil
 }
 

@@ -28,7 +28,13 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 	}
 
 	s := e.state.settings
-	spec := buildLaunchSpec(e.cfg, s, e.state.workspacePath)
+	spec := buildLaunchSpec(e.cfg, s, e.state.app, e.state.workspacePath)
+	if err := prepareSidecarConfig(e.cfg.ConfigDir, s); err != nil {
+		if done != nil {
+			done(err)
+		}
+		return
+	}
 
 	env := piadapter.MergedEnv(spec.Env)
 	client, cmd, err := piadapter.StartProcess(piadapter.ProcessConfig{
@@ -94,7 +100,12 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 			})
 		}
 
-		last := s.LastSessionFile
+		if st.SessionFile != "" && st.SessionFile != e.state.app.LastSessionFile {
+			e.state.app.LastSessionFile = st.SessionFile
+			_ = saveState(e.cfg.ConfigDir, e.state.app)
+		}
+
+		last := e.state.app.LastSessionFile
 		if restore && last != "" && st.SessionFile != last && fileExists(last) {
 			e.sendPi("switch_session", map[string]any{"sessionPath": last}, func(resp piadapter.Response, err error) {
 				if err != nil || !resp.Success {
@@ -169,7 +180,7 @@ func (e *Engine) onSidecarGone(err error) {
 // launch spec assembly (incl. the fakepi dev seam)
 // ---------------------------------------------------------------------------
 
-func buildLaunchSpec(cfg EngineConfig, s persistedSettings, workspace string) piadapter.LaunchSpec {
+func buildLaunchSpec(cfg EngineConfig, s Settings, st appState, workspace string) piadapter.LaunchSpec {
 	agentDir := filepath.Join(cfg.ConfigDir, "agent")
 	sessionDir := filepath.Join(cfg.ConfigDir, "sessions")
 
@@ -191,10 +202,97 @@ func buildLaunchSpec(cfg EngineConfig, s persistedSettings, workspace string) pi
 	return piadapter.BuildLaunchSpec(piadapter.SidecarSettings{
 		Provider:      s.Provider,
 		Model:         s.Model,
-		APIKey:        s.APIKey,
+		APIKey:        sidecarAPIKey(s),
+		APIKeyEnv:     sidecarKeyEnvVars(s),
 		BashWhitelist: s.BashWhitelist,
-		SessionName:   s.SessionName,
+		SessionName:   st.SessionName,
 	}, workspace, agentDir, sessionDir, cfg.ExtensionPath, binary)
+}
+
+// sidecarAPIKey is the key injected via env: only for a built-in provider
+// without a providers: entry (an overridden provider's key lives in
+// models.json instead).
+func sidecarAPIKey(s Settings) string {
+	if _, overridden := s.Providers[s.Provider]; overridden {
+		return ""
+	}
+	return s.APIKey
+}
+
+// sidecarKeyEnvVars resolves the env var names pi reads the key from.
+func sidecarKeyEnvVars(s Settings) []string {
+	if names, known := knownProviderEnv[s.Provider]; known && len(names) > 0 {
+		return names
+	}
+	return nil // piadapter falls back to its convention
+}
+
+// prepareSidecarConfig materializes the sidecar's isolated config dir from
+// settings.yaml: provider endpoint definitions go to models.json.
+// (The API key for built-in providers travels via env, not a file.)
+func prepareSidecarConfig(configDir string, cfg Settings) error {
+	dir := filepath.Join(configDir, "agent")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("sidecar config: mkdir: %w", err)
+	}
+	return writeModelsJSON(dir, cfg)
+}
+
+// writeModelsJSON translates Settings.Providers into pi's models.json.
+// The top-level apiKey feeds the selected provider's entry when that entry
+// has no key of its own. Unknown YAML keys (ProviderSettings.Extra) pass
+// through untouched. Stale files from a previous configuration are removed.
+func writeModelsJSON(dir string, cfg Settings) error {
+	path := filepath.Join(dir, "models.json")
+	if len(cfg.Providers) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("sidecar config: remove stale models.json: %w", err)
+		}
+		return nil
+	}
+
+	providers := make(map[string]map[string]any, len(cfg.Providers))
+	for id, p := range cfg.Providers {
+		m := make(map[string]any, len(p.Extra)+6)
+		for k, v := range p.Extra {
+			m[k] = v
+		}
+		if p.Name != "" {
+			m["name"] = p.Name
+		}
+		if p.BaseURL != "" {
+			m["baseUrl"] = p.BaseURL
+		}
+		if p.API != "" {
+			m["api"] = p.API
+		}
+		key := p.APIKey
+		if key == "" && id == cfg.Provider {
+			key = cfg.APIKey
+		}
+		if key != "" {
+			m["apiKey"] = key
+		}
+		if p.AuthHeader != nil {
+			m["authHeader"] = *p.AuthHeader
+		}
+		if len(p.Headers) > 0 {
+			m["headers"] = p.Headers
+		}
+		if len(p.Models) > 0 {
+			m["models"] = p.Models
+		}
+		providers[id] = m
+	}
+
+	data, err := json.MarshalIndent(map[string]any{"providers": providers}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("sidecar config: marshal models.json: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("sidecar config: write models.json: %w", err)
+	}
+	return nil
 }
 
 func fileExists(p string) bool {
