@@ -200,6 +200,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
 - Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
+- When the user asks to be SHOWN something ("show me…", "let me see…", "display…") — or your reply would be a long document, table, list, or code block — render it with \`show_content\` instead of stating it inline. Keep the chat reply itself short (a sentence pointing at the panel); the panel is the reading surface, chat is the conversation.
 - \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
 
 // ---------------------------------------------------------------------------
@@ -344,6 +345,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet: "Display a markdown document in the user's content panel",
 		promptGuidelines: [
 			"Use show_content to display documents for the user to read (reports, plans, notes, summaries); it never creates project files — use propose_edit for anything that belongs in the project.",
+			"When the user asks to be shown something, or your answer is a long document/list/table, render it with show_content and keep the chat reply to a one-line pointer.",
 		],
 		parameters: ShowContentParamsSchema,
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
