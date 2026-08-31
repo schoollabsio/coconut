@@ -3,6 +3,7 @@ import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import { useUIState } from '../store'
 import { Markdown } from './Markdown'
+import { StreamingText } from './StreamingText'
 
 const MAX_INPUT_HEIGHT = 160
 
@@ -62,7 +63,7 @@ export function Chat({ client }: { client: BackendClient }) {
                 ✦
               </span>
               <div className="min-w-0 flex-1">
-                <Markdown text={m.text} />
+                {m.streaming ? <StreamingText text={m.text} /> : <Markdown text={m.text} />}
                 {m.streaming && <span className="text-gray-500 animate-pulse">▍</span>}
               </div>
             </div>
