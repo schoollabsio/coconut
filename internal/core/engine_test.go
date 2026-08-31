@@ -256,3 +256,56 @@ func TestSequenceMonotonic(t *testing.T) {
 	}
 	fmt.Println("checked", len(collector.envs), "envelopes")
 }
+
+// TestWorkspacePickFlow drives the exact path the UI uses: workspace.pick
+// (native dialog stubbed) must emit workspace.changed, start the sidecar,
+// and respond — regression test for "nothing happens after picking a dir".
+func TestWorkspacePickFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+
+	fakepi := buildFakepi(t)
+	scenario, err := filepath.Abs("../../testdata/scenarios/todo-app.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+
+	t.Setenv("CUSTARD_PI_BINARY", fakepi)
+	t.Setenv("CUSTARD_PI_SCENARIO", scenario)
+
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{
+		ConfigDir: t.TempDir(),
+		PickDir:   func() (string, error) { return workspace, nil },
+		Emit:      collector.emit,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go engine.Run(ctx)
+	defer engine.Shutdown()
+
+	resp := sendCommand(t, engine, protocol.CmdWorkspacePick, map[string]any{})
+	if !resp.OK {
+		t.Fatalf("workspace.pick failed: %+v", resp.Error)
+	}
+	if _, ok := collector.waitFor(t, 10*time.Second, "workspace.changed", isEvent(protocol.EvWorkspaceChanged)); !ok {
+		t.Fatal("workspace.changed never emitted")
+	}
+	if _, ok := collector.waitFor(t, 10*time.Second, "session.restored", isEvent(protocol.EvSessionRestored)); !ok {
+		t.Fatal("session.restored never emitted (sidecar never started?)")
+	}
+
+	snap := engine.RequestSnapshot()
+	var sm protocol.Snapshot
+	if err := json.Unmarshal(snap, &sm); err != nil {
+		t.Fatal(err)
+	}
+	if sm.State.Workspace.Path != workspace {
+		t.Fatalf("snapshot workspace = %q, want %q", sm.State.Workspace.Path, workspace)
+	}
+}

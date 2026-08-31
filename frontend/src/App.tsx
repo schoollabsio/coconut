@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import { BackendClient, BackendUnavailableError } from './backend'
 import { Cmd, type BackendMessage } from './protocol'
 import { store, useUIState } from './store'
@@ -15,14 +15,15 @@ export default function App() {
   const notifications = useUIState((s) => s.notifications)
   const connected = useUIState((s) => s.connected)
 
-  const booted = useRef(false)
+  // NOTE: no "booted" ref guard — React StrictMode (dev) intentionally
+  // mounts, cleans up, and re-mounts effects. A ref guard would skip the
+  // second subscription, leaving the app deaf to all backend events.
+  // Cleanup must fully undo setup; setup must be safe to run twice.
   useEffect(() => {
-    if (booted.current) return
-    booted.current = true
-
     // Buffer events until the initial snapshot lands, then flush in
     // order (Appendix A: connect → snapshot → live events).
     let gotSnapshot = false
+    let cancelled = false
     const buffered: BackendMessage[] = []
     let resyncing = false
 
@@ -31,7 +32,7 @@ export default function App() {
       resyncing = true
       try {
         const snap = await client.requestSnapshot()
-        store.applyBackendMessage(snap)
+        if (!cancelled) store.applyBackendMessage(snap)
       } finally {
         resyncing = false
       }
@@ -41,6 +42,7 @@ export default function App() {
     let unsubscribe: (() => void) | undefined
     try {
       unsubscribe = client.onMessage((msg) => {
+        if (cancelled) return
         if (!gotSnapshot) {
           buffered.push(msg)
           return
@@ -58,19 +60,24 @@ export default function App() {
     void (async () => {
       try {
         const resp = await client.command<{ needsWorkspace?: boolean }>(Cmd.SessionRestore, {})
+        if (cancelled) return
         if (resp.ok && resp.payload?.needsWorkspace) {
           store.setNeedsWorkspace(true)
         }
         const snap = await client.requestSnapshot()
+        if (cancelled) return
         store.applyBackendMessage(snap)
         gotSnapshot = true
         for (const m of buffered) store.applyBackendMessage(m)
       } catch (err) {
-        console.error('boot failed', err)
+        if (!cancelled) console.error('boot failed', err)
       }
     })()
 
-    return () => unsubscribe?.()
+    return () => {
+      cancelled = true
+      unsubscribe?.()
+    }
   }, [client])
 
   return (
