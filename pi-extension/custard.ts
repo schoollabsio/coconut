@@ -21,15 +21,19 @@
  *   1. propose_edit tool — the ONLY way the agent can create/modify files
  *      (built-in edit/write are not in --tools). Gated on user approval.
  *   2. write_content tool — ungated channel for rendering markdown documents
- *      into the app's content panel.
- *   3. tool_call hook gating `bash` behind a read-only whitelist + approval.
+ *      into the app's content panel. Staged OUTSIDE the workspace so it can
+ *      never create/modify project files.
+ *   3. tool_call hook gating `bash` behind a read-only whitelist + approval,
+ *      and hard-blocking built-in edit/write/apply_patch if a pi build ever
+ *      activates them despite --tools.
  *   4. before_agent_start — appends "Custard environment" system-prompt guidance.
  *   5. project_trust — always "no": the app isolates the agent from
  *      project-local pi settings/extensions.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { type ExtensionAPI, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -57,7 +61,7 @@ const ProposeEditParamsSchema = Type.Object({
 export type ProposeEditParams = Static<typeof ProposeEditParamsSchema>;
 
 const WriteContentParamsSchema = Type.Object({
-	path: Type.String({ description: 'File to write, relative to the working directory (e.g. "content.md").' }),
+	path: Type.String({ description: 'Document file name, e.g. "report.md" (staged outside the project tree).' }),
 	content: Type.String({ description: "Full document content (usually Markdown)." }),
 });
 export type WriteContentParams = Static<typeof WriteContentParamsSchema>;
@@ -97,6 +101,24 @@ function replaceFirst(haystack: string, needle: string, replacement: string): st
 function preview(s: string, max = 80): string {
 	const oneLine = s.replace(/\n/g, "\\n");
 	return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
+}
+
+// write_content stages documents here — inside pi's agent dir, which custard
+// sets to its own isolated config dir — so the ungated render channel can
+// never write into the user's project.
+const CONTENT_STAGING = join(process.env.PI_CODING_AGENT_DIR ?? tmpdir(), "content");
+
+// Resolve a model-supplied document name into the staging dir, refusing
+// anything that would escape it (absolute paths, drive letters, "..").
+function stagingPath(name: string): string {
+	const cleaned = cleanPath(name).replace(/^([A-Za-z]:)?[\\/]+/, "");
+	const parts = cleaned.split(/[\\/]+/).filter((p) => p !== "" && p !== "." && p !== "..");
+	if (parts.length === 0) parts.push("content.md");
+	const abs = resolve(CONTENT_STAGING, parts.join(sep));
+	if (abs !== CONTENT_STAGING && !abs.startsWith(CONTENT_STAGING + sep)) {
+		return join(CONTENT_STAGING, "content.md");
+	}
+	return abs;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +199,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
   - Propose complete, well-formed edits: every \`oldText\` must match the file's current content exactly, and give each proposal a clear \`what\` and \`why\` — the user reads them when deciding.
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
-- Use \`write_content\` to render markdown documents (reports, plans, notes, summaries) into the user's content panel. It is the sanctioned channel for deliverables the user should read and is not approval-gated; it is not for modifying source files.
+- Use \`write_content\` to render markdown documents (reports, plans, notes, summaries) into the user's content panel. It is the sanctioned channel for deliverables the user should read and is not approval-gated; documents are staged outside the project tree and CANNOT create or modify project files — use \`propose_edit\` for anything that belongs in the project.
 - \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
 
 // ---------------------------------------------------------------------------
@@ -316,15 +338,14 @@ export default function (pi: ExtensionAPI) {
 		name: "write_content",
 		label: "Write Content",
 		description:
-			"Render a document (usually Markdown) into the user's content panel by writing it to a file. This is the sanctioned, non-gated output channel for deliverables the user should read. Do NOT use it to create or modify source/code files — use propose_edit for those.",
+			"Render a document (usually Markdown) into the user's content panel. The document is staged OUTSIDE the project tree: this tool cannot create or modify project files (use propose_edit for those). This is the sanctioned, non-gated output channel for deliverables the user should read.",
 		promptSnippet: "Render a markdown document into the user's content panel",
 		promptGuidelines: [
-			"Use write_content for documents the user should read (reports, plans, notes, summaries); use propose_edit for any modification to project files.",
+			"Use write_content for documents the user should read (reports, plans, notes, summaries); it does not create project files — use propose_edit for anything that belongs in the project.",
 		],
 		parameters: WriteContentParamsSchema,
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const path = cleanPath(params.path);
-			const absPath = toAbsolute(ctx.cwd, path);
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+			const absPath = stagingPath(params.path);
 
 			await withFileMutationQueue(absPath, async () => {
 				await mkdir(dirname(absPath), { recursive: true });
@@ -334,8 +355,8 @@ export default function (pi: ExtensionAPI) {
 			// Keep the result tiny: the backend renders path/content from the tool
 			// call arguments, not from this result.
 			return {
-				content: [{ type: "text", text: `content written to ${path}` }],
-				details: { path },
+				content: [{ type: "text", text: `content rendered to the user's panel (staged outside the project at ${absPath})` }],
+				details: { path: params.path },
 			};
 		},
 	});
@@ -345,6 +366,17 @@ export default function (pi: ExtensionAPI) {
 	// -----------------------------------------------------------------------
 
 	pi.on("tool_call", async (event, ctx) => {
+		// Hard-block built-in file-mutation tools if a pi build ever activates
+		// them despite the --tools allowlist: propose_edit is the only
+		// sanctioned file-mutation channel.
+		if (event.toolName === "edit" || event.toolName === "write" || event.toolName === "apply_patch") {
+			return {
+				block: true,
+				reason:
+					"Built-in file tools are disabled in this environment. Use propose_edit (approval-gated) for any file creation or modification.",
+			};
+		}
+
 		if (event.toolName !== "bash") return undefined;
 
 		const command = (event.input as { command?: unknown }).command;

@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jschool/custard/internal/protocol"
@@ -136,14 +137,19 @@ func (s *domainState) endStream(finalText string) protocol.ChatMessage {
 	if !s.streaming {
 		return protocol.ChatMessage{}
 	}
+	s.streaming = false
+	s.streamText = ""
+	if strings.TrimSpace(finalText) == "" {
+		// Tool-call-only assistant turns carry no prose; emitting them
+		// would render an empty bubble (just the ✦ icon) in the chat.
+		return protocol.ChatMessage{}
+	}
 	msg := protocol.ChatMessage{
 		ID:   s.streamMsgID,
 		Role: "assistant",
 		Text: finalText,
 	}
 	s.messages = append(s.messages, msg)
-	s.streaming = false
-	s.streamText = ""
 	return msg
 }
 
