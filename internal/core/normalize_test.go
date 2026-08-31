@@ -2,6 +2,9 @@ package core
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/jschool/custard/internal/piadapter"
@@ -104,5 +107,60 @@ func TestShowContentPromotion(t *testing.T) {
 	feedNorm(engine, "tool_execution_end", `{"toolCallId":"tc2","toolName":"show_content","isError":true}`)
 	if engine.state.content.Path == "nope.md" {
 		t.Fatal("errored show_content was promoted")
+	}
+}
+
+// show_content file mode renders an existing file from disk: the backend
+// reads it (contents never touch the model transcript) and promotes it.
+func TestShowContentFileMode(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "notes.md"), []byte("# Notes\nhello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(workspace, "abs.md")
+	if err := os.WriteFile(abs, []byte("absolute"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.state.workspacePath = workspace
+
+	// Relative path resolves against the workspace.
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"f1","toolName":"show_content","args":{"file":"notes.md"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"f1","toolName":"show_content","isError":false}`)
+	if engine.state.content == nil || engine.state.content.Content != "# Notes\nhello" {
+		t.Fatalf("file content not promoted: %+v", engine.state.content)
+	}
+	if engine.state.content.Path != "notes.md" {
+		t.Fatalf("label should be the model-supplied path, got %q", engine.state.content.Path)
+	}
+
+	// Absolute path works too.
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"f2","toolName":"show_content","args":{"file":`+strconv.Quote(abs)+`}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"f2","toolName":"show_content","isError":false}`)
+	if engine.state.content.Content != "absolute" {
+		t.Fatalf("absolute file not promoted: %+v", engine.state.content)
+	}
+
+	// Missing file: no promotion, error notification.
+	engine.state.content = nil
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"f3","toolName":"show_content","args":{"file":"ghost.md"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"f3","toolName":"show_content","isError":false}`)
+	if engine.state.content != nil {
+		t.Fatal("missing file must not promote")
+	}
+	if _, _, ok := collector.find(t, func(envType, name string, raw json.RawMessage) bool {
+		if envType != "event" || name != protocol.EvNotification {
+			return false
+		}
+		var n protocol.NotificationPayload
+		_ = json.Unmarshal(raw, &n)
+		return n.Level == "error"
+	}); !ok {
+		t.Fatal("no error notification for missing file")
 	}
 }

@@ -20,9 +20,11 @@
  * Pieces:
  *   1. propose_edit tool — the ONLY way the agent can create/modify files
  *      (built-in edit/write are not in --tools). Gated on user approval.
- *   2. show_content tool — ungated display channel for rendering markdown
- *      documents into the app's content panel. Staged OUTSIDE the workspace
- *      so it can never create/modify project files.
+ *   2. show_content tool — ungated display channel into the app's content
+ *      panel. Mode A (path+content): render a composed document, staged
+ *      OUTSIDE the workspace so it can never create/modify project files.
+ *      Mode B (file): render an existing file read directly from disk.
+ *      Read-only in both modes.
  *   3. tool_call hook gating `bash` behind a read-only whitelist + approval,
  *      and hard-blocking built-in edit/write/apply_patch if a pi build ever
  *      activates them despite --tools.
@@ -200,7 +202,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
 - Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
-- When the user asks to be SHOWN something ("show me…", "let me see…", "display…") — or your reply would be a long document, table, list, or code block — render it with \`show_content\` instead of stating it inline. Keep the chat reply itself short (a sentence pointing at the panel); the panel is the reading surface, chat is the conversation.
+- When the user asks to be SHOWN something ("show me…", "let me see…", "display…") — or your reply would be a long document, table, list, or code block — render it with \`show_content\` instead of stating it inline. To show an existing file, pass \`file\` (you do not need to reproduce its contents); to render a document you compose, pass \`path\` + \`content\`. Keep the chat reply itself short (a sentence pointing at the panel); the panel is the reading surface, chat is the conversation.
 - \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
 
 // ---------------------------------------------------------------------------

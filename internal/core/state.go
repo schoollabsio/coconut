@@ -40,7 +40,8 @@ type toolStartInfo struct {
 	ToolName string
 	Path     string
 	Command  string
-	Content  string // show_content payload
+	Content  string // show_content composed-document payload
+	File     string // show_content render-an-existing-file payload
 	Args     map[string]any
 }
 

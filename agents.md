@@ -274,6 +274,10 @@ Translates raw pi events into domain mutations + backend emissions.
 `setStatus` only emits `agent.status.changed` on transitions.
 `extension_ui_request` events with `custard://` titles are bridged to
 approval requests; `notify` method events pass through as notifications.
+`show_content` completions promote the call args into the content panel
+doc: mode A (`path`+`content`) renders the composed document; mode B
+(`file`) re-reads the named file off disk (relative to the workspace) so
+its contents never enter the model transcript. Errors become notifications.
 
 ### Sidecar lifecycle (`internal/core/sidecar.go`)
 - `startSidecarLocked` — launches pi, pumps events via goroutine → `inbox`,

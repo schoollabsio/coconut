@@ -98,6 +98,9 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		if c, ok := m.Args["content"].(string); ok {
 			info.Content = c
 		}
+		if f, ok := m.Args["file"].(string); ok {
+			info.File = f
+		}
 		e.state.toolArgs[m.ToolCallID] = info
 
 		call := protocol.ToolCall{
@@ -156,14 +159,12 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		}, "")
 
 		// show_content is the fenced content channel: promote its
-		// args (captured at start) into the content doc. Ungated — the
-		// staged copy lives outside the workspace and nothing in the
-		// project is mutated.
+		// args (captured at start) into the content doc. Ungated — it
+		// displays only; composed docs are staged outside the workspace
+		// and file mode is read-only.
 		if m.ToolName == "show_content" && !m.IsError {
-			if info, ok := e.state.toolArgs[m.ToolCallID]; ok && info.Path != "" {
-				doc := &protocol.ContentDoc{Path: info.Path, Content: info.Content, UpdatedAt: nowMs()}
-				e.state.content = doc
-				e.emitEvent(protocol.EvContentUpdated, doc, "")
+			if info, ok := e.state.toolArgs[m.ToolCallID]; ok {
+				e.promoteShowContent(info)
 			}
 		}
 
@@ -404,4 +405,40 @@ func (e *Engine) readWorkspaceFile(p string) string {
 		return ""
 	}
 	return string(b)
+}
+
+// showContentMaxBytes caps file-mode renders (the panel displays the whole
+// document; the extension enforces the same limit).
+const showContentMaxBytes = 4 << 20
+
+// promoteShowContent turns a completed show_content call into the panel's
+// content doc. Actor-only.
+//
+// Mode A (path+content): the composed document comes from the tool args.
+// Mode B (file): the backend reads the file off disk itself, so the file's
+// contents never pass through the model's context. Relative paths resolve
+// against the workspace (pi's session cwd).
+func (e *Engine) promoteShowContent(info toolStartInfo) {
+	if info.File != "" {
+		path := info.File
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(e.state.workspacePath, path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			e.notify("error", "show_content: cannot read "+info.File)
+			return
+		}
+		if len(data) > showContentMaxBytes {
+			e.notify("error", "show_content: "+info.File+" is too large to display")
+			return
+		}
+		e.state.content = &protocol.ContentDoc{Path: info.File, Content: string(data), UpdatedAt: nowMs()}
+		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
+		return
+	}
+	if info.Path != "" {
+		e.state.content = &protocol.ContentDoc{Path: info.Path, Content: info.Content, UpdatedAt: nowMs()}
+		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
+	}
 }
