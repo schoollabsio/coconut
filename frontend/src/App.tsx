@@ -82,37 +82,37 @@ export default function App() {
   }, [client])
 
   return (
-    <div className="h-full flex items-center justify-center p-2">
-      <div className="bg-gray-900 rounded-2xl shadow-2xl p-2 w-full max-w-[1400px] h-full max-h-[900px] border border-gray-800 flex flex-col">
-        <Header client={client} />
+    // Content fills the whole window (hidden titlebar). The root is the
+    // window drag region; interactive containers opt back out (no-drag).
+    <div className="drag-region h-full flex flex-col bg-gray-900">
+      <Header client={client} />
 
-        {needsWorkspace ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="border border-dashed border-gray-700 rounded-lg px-10 py-12 text-center">
-              <div className="text-gray-300 text-sm font-medium">Choose a workspace to begin</div>
-              <div className="text-gray-500 text-xs mt-1 mb-4">The agent reads and proposes changes inside this folder.</div>
-              <button
-                onClick={() => void client.command(Cmd.WorkspacePick, {})}
-                className="px-4 py-2 rounded-lg text-sm bg-blue-500 hover:bg-blue-400 text-white transition-colors"
-              >
-                Choose folder…
-              </button>
-            </div>
+      {needsWorkspace ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="no-drag border border-dashed border-gray-700 rounded-lg px-10 py-12 text-center">
+            <div className="text-gray-300 text-sm font-medium">Choose a workspace to begin</div>
+            <div className="text-gray-500 text-xs mt-1 mb-4">The agent reads and proposes changes inside this folder.</div>
+            <button
+              onClick={() => void client.command(Cmd.WorkspacePick, {})}
+              className="px-4 py-2 rounded-lg text-sm bg-blue-500 hover:bg-blue-400 text-white transition-colors"
+            >
+              Choose folder…
+            </button>
           </div>
-        ) : (
-          <ColumnGrid
-            tools={<ToolLog />}
-            chat={<Chat client={client} />}
-            content={<ContentPanel client={client} />}
-          />
-        )}
-      </div>
+        </div>
+      ) : (
+        <ColumnGrid
+          tools={<ToolLog />}
+          chat={<Chat client={client} />}
+          content={<ContentPanel client={client} />}
+        />
+      )}
 
       <SettingsModal client={client} />
       <AgentPicker client={client} />
 
       {/* Notifications */}
-      <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm">
+      <div className="no-drag fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm">
         {notifications.map((n) => (
           <button
             key={n.id}

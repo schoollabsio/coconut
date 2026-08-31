@@ -109,7 +109,7 @@ export function SettingsModal({ client }: { client: BackendClient }) {
         if (e.target === e.currentTarget) close()
       }}
     >
-      <div className="w-full max-w-2xl rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="no-drag w-full max-w-2xl rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2.5 shrink-0">
           <span className="text-xs font-mono text-gray-400">settings.yaml</span>
           <div className="flex items-center gap-2">

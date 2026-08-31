@@ -40,8 +40,9 @@ export function Header({ client }: { client: BackendClient }) {
 
   return (
     // pl-[76px]: the window's traffic-light buttons float over the top-left
-    // (hidden titlebar); drag-region makes the strip drag the window.
-    <div className="drag-region flex items-center gap-2 pl-[76px] pr-2 pt-1 pb-2 mb-1 border-b border-gray-800">
+    // (hidden titlebar). The strip itself drags the window (inherited from
+    // the app root's drag-region); interactive elements opt out (no-drag).
+    <div className="flex items-center gap-2 pl-[76px] pr-2 pt-1 pb-2 mb-1 border-b border-gray-800">
       <input
         ref={inputRef}
         defaultValue={agentName}

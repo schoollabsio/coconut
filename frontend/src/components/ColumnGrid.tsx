@@ -97,7 +97,7 @@ export function ColumnGrid(props: { tools: ReactNode; chat: ReactNode; content: 
     <div
       ref={gridRef}
       style={gridStyle}
-      className="grid grid-cols-1 md:grid-cols-[1fr_12px_2fr_12px_2fr] divide-y md:divide-y-0 divide-gray-800 md:h-[calc(100%-2.5rem)]"
+      className="no-drag grid grid-cols-1 md:grid-cols-[1fr_12px_2fr_12px_2fr] divide-y md:divide-y-0 divide-gray-800 flex-1 min-h-0"
     >
       <div className={panelClass(0) + ' min-h-32'}>{props.tools}</div>
       {handle(0, 1, 0, 'Tools', 'Drag to resize · click to collapse tools')}

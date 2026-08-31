@@ -45,7 +45,7 @@ export function AgentPicker({ client }: { client: BackendClient }) {
       onClick={() => store.closeAgentPicker()}
     >
       <div
-        className="w-[680px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
+        className="no-drag w-[680px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
