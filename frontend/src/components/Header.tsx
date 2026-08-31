@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
+import type { AgentSummary } from '../protocol'
 import { store, useUIState } from '../store'
 
-/** Header row: session name, workspace path (click to change), settings gear. */
+/** Header row: agent name + agent/session controls, workspace path (click
+ *  to change), settings gear. */
 export function Header({ client }: { client: BackendClient }) {
-  const sessionName = useUIState((s) => s.sessionName)
+  const agentName = useUIState((s) => s.agentName)
   const workspace = useUIState((s) => s.workspace)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -13,13 +15,13 @@ export function Header({ client }: { client: BackendClient }) {
     const el = inputRef.current
     if (el) el.size = Math.max(el.value.length, 4)
   }
-  useEffect(fitName, [sessionName])
+  useEffect(fitName, [agentName])
 
   const commitName = () => {
-    const name = inputRef.current?.value.trim() || 'Untitled Session'
-    if (name !== sessionName) {
-      store.setSessionNameLocal(name)
-      void client.command(Cmd.SessionRename, { name })
+    const name = inputRef.current?.value.trim() || 'Untitled Agent'
+    if (name !== agentName) {
+      store.setAgentNameLocal(name)
+      void client.command(Cmd.AgentRename, { name })
     }
   }
 
@@ -27,14 +29,23 @@ export function Header({ client }: { client: BackendClient }) {
     void client.command(Cmd.WorkspacePick, {})
   }
 
+  const openAgents = async () => {
+    const resp = await client.command<{ agents?: AgentSummary[] }>(Cmd.AgentList, {})
+    if (resp.ok) store.openAgentPicker(resp.payload?.agents ?? [])
+  }
+
+  const resetSession = () => {
+    void client.command(Cmd.AgentReset, {})
+  }
+
   return (
     <div className="flex items-center gap-2 px-2 pt-1 pb-2 mb-1 border-b border-gray-800">
       <input
         ref={inputRef}
-        defaultValue={sessionName}
-        key={sessionName /* external renames reset the field */}
+        defaultValue={agentName}
+        key={agentName /* external renames reset the field */}
         spellCheck={false}
-        aria-label="Session name"
+        aria-label="Agent name"
         onBlur={commitName}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -42,6 +53,30 @@ export function Header({ client }: { client: BackendClient }) {
         onInput={fitName}
         className="min-w-0 bg-transparent text-sm text-gray-200 rounded-md px-1.5 py-0.5 border border-transparent hover:border-gray-700 hover:bg-gray-800 focus:border-gray-600 focus:bg-gray-800 outline-none transition-colors"
       />
+      <button
+        aria-label="Agents and sessions"
+        title="Switch agent or open a previous session"
+        onClick={openAgents}
+        className="shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      <button
+        aria-label="New session"
+        title="New session (current transcript stays on disk)"
+        onClick={resetSession}
+        className="shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4 4v6h6M20 20v-6h-6M20 8.5A8 8 0 005.6 5.6L4 7m0 8.5A8 8 0 0018.4 18.4L20 17"
+          />
+        </svg>
+      </button>
       <span className="h-3.5 w-px bg-gray-800 shrink-0" />
       <button
         onClick={pickWorkspace}

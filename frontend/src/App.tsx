@@ -7,6 +7,7 @@ import { ColumnGrid } from './components/ColumnGrid'
 import { ContentPanel } from './components/ContentPanel'
 import { Header } from './components/Header'
 import { SettingsModal } from './components/SettingsModal'
+import { AgentPicker } from './components/AgentPicker'
 import { ToolLog } from './components/ToolLog'
 
 export default function App() {
@@ -108,6 +109,7 @@ export default function App() {
       </div>
 
       <SettingsModal client={client} />
+      <AgentPicker client={client} />
 
       {/* Notifications */}
       <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm">

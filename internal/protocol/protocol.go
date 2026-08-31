@@ -81,8 +81,11 @@ type ErrorMessage struct {
 // ---------------------------------------------------------------------------
 
 const (
-	CmdSessionRestore   = "session.restore"
-	CmdSessionRename    = "session.rename"
+	CmdSessionRestore   = "session.restore" // startup bootstrap: reopen last agent
+	CmdAgentOpen        = "agent.open"      // open an agent (+ optional session)
+	CmdAgentRename      = "agent.rename"
+	CmdAgentReset       = "agent.reset" // new underlying pi session, same agent
+	CmdAgentList        = "agent.list"  // scan workspace agents + sessions
 	CmdWorkspacePick    = "workspace.pick" // opens native dir picker
 	CmdWorkspaceSet     = "workspace.set"
 	CmdAgentStart       = "agent.start"
@@ -98,8 +101,9 @@ const (
 // ---------------------------------------------------------------------------
 
 const (
-	EvSessionRestored    = "session.restored"
+	EvSessionRestored    = "session.restored" // agent opened / session switched
 	EvWorkspaceChanged   = "workspace.changed"
+	EvAgentReset         = "agent.session.reset" // new session started in place
 	EvAgentStarted       = "agent.started"
 	EvAgentStatusChanged = "agent.status.changed"
 	EvAgentMessage       = "agent.message.appended"
@@ -125,8 +129,36 @@ const (
 // Command payloads
 // ---------------------------------------------------------------------------
 
-type SessionRenamePayload struct {
+type AgentRenamePayload struct {
 	Name string `json:"name"`
+}
+
+// AgentOpenPayload selects an agent (by slug, or by name for a new agent)
+// and optionally a specific session. New=true starts a fresh session even
+// if the agent has a restorable one.
+type AgentOpenPayload struct {
+	Slug        string `json:"slug,omitempty"`
+	Name        string `json:"name,omitempty"` // for "new agent": slugified server-side
+	SessionFile string `json:"sessionFile,omitempty"`
+	New         bool   `json:"new,omitempty"`
+}
+
+// AgentSummary is one agent in a workspace scan.
+type AgentSummary struct {
+	Slug     string           `json:"slug"`
+	Name     string           `json:"name"`
+	Current  bool             `json:"current"`
+	Sessions []SessionSummary `json:"sessions"`
+}
+
+// SessionSummary is one transcript in a workspace scan.
+type SessionSummary struct {
+	File       string `json:"file"`
+	StartedAt  string `json:"startedAt"`  // RFC3339, from the session header
+	ModifiedAt string `json:"modifiedAt"` // RFC3339, file mtime (last activity)
+	SizeBytes  int64  `json:"sizeBytes"`
+	Preview    string `json:"preview,omitempty"` // first user message, truncated
+	Current    bool   `json:"current"`
 }
 
 type WorkspaceSetPayload struct {
@@ -254,7 +286,8 @@ type AgentState struct {
 
 // SnapshotState is the backend-derivable state tree (PLAN.md §4.4, v1 subset).
 type SnapshotState struct {
-	SessionName      string            `json:"sessionName"`
+	AgentName        string            `json:"agentName"`
+	AgentSlug        string            `json:"agentSlug"`
 	Workspace        WorkspaceInfo     `json:"workspace"`
 	Agent            AgentState        `json:"agent"`
 	Content          *ContentDoc       `json:"content"`

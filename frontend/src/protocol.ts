@@ -58,7 +58,10 @@ export type BackendMessage = BackendEvent | StreamMessage | SnapshotMessage | Er
 
 export const Cmd = {
   SessionRestore: 'session.restore',
-  SessionRename: 'session.rename',
+  AgentOpen: 'agent.open',
+  AgentRename: 'agent.rename',
+  AgentReset: 'agent.reset',
+  AgentList: 'agent.list',
   WorkspacePick: 'workspace.pick',
   WorkspaceSet: 'workspace.set',
   AgentStart: 'agent.start',
@@ -76,6 +79,7 @@ export const Cmd = {
 export const Ev = {
   SessionRestored: 'session.restored',
   WorkspaceChanged: 'workspace.changed',
+  AgentReset: 'agent.session.reset',
   AgentStarted: 'agent.started',
   AgentStatusChanged: 'agent.status.changed',
   AgentMessage: 'agent.message.appended',
@@ -165,12 +169,37 @@ export interface AgentState {
 }
 
 export interface SnapshotState {
-  sessionName: string
+  agentName: string
+  agentSlug: string
   workspace: WorkspaceInfo
   agent: AgentState
   content: ContentDoc | null
   pendingApprovals: ApprovalRequest[]
   settingsYaml: string
+}
+
+/** One agent in a workspace scan (agent.list / workspace.changed). */
+export interface AgentSummary {
+  slug: string
+  name: string
+  current: boolean
+  sessions: SessionSummary[]
+}
+
+export interface SessionSummary {
+  file: string
+  startedAt: string // RFC3339
+  modifiedAt: string // RFC3339
+  sizeBytes: number
+  preview?: string
+  current: boolean
+}
+
+/** workspace.changed event payload. */
+export interface WorkspaceChangedPayload {
+  workspace: WorkspaceInfo
+  agents: AgentSummary[]
+  needsPick: boolean
 }
 
 export interface TokenPayload {

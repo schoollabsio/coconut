@@ -7,23 +7,23 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Session naming → on-disk layout
+// Agent naming → on-disk layout
 //
-// Sessions are stored inside the workspace:
+// Agents are persistent, workspace-scoped identities; each owns a run of pi
+// sessions:
 //
-//	<workspace>/.custard/sessions/<slug>/<pi-timestamp>_<uuid>.jsonl
+//	<workspace>/.custard/agents/<agent-slug>/sessions/<pi-timestamp>_<uuid>.jsonl
 //
-// The slug derives from the user-entered session name ("My Session" →
-// "my-session"). Renames take effect on the live session immediately (via
-// pi's set_session_name), but the physical directory move is DEFERRED to the
-// next sidecar launch: pi caches the session file's absolute path and may
-// rewrite it during compaction, so moving it mid-session could split the
-// transcript across two directories.
+// The slug derives from the user-entered agent name ("Frontend Agent" →
+// "frontend-agent"). Renames update the live session immediately (via pi's
+// set_session_name), but the physical directory move is DEFERRED to the next
+// sidecar launch: pi caches the session file's absolute path and may rewrite
+// it during compaction, so moving it mid-session could split the transcript.
 // ---------------------------------------------------------------------------
 
 // Slugify maps a display name to a directory-safe slug: lowercase ASCII
 // alphanumerics, everything else collapses to single dashes. Empty results
-// fall back to "session".
+// fall back to "agent".
 func Slugify(name string) string {
 	name = strings.ToLower(strings.TrimSpace(name))
 	var b strings.Builder
@@ -40,21 +40,37 @@ func Slugify(name string) string {
 	}
 	s := strings.TrimSuffix(b.String(), "-")
 	if s == "" {
-		return "session"
+		return "agent"
 	}
 	return s
 }
 
-// sessionDirFor returns the pi --session-dir for a workspace+slug.
-func sessionDirFor(workspace, slug string) string {
-	return filepath.Join(workspace, ".custard", "sessions", slug)
+// humanizeSlug renders a slug as a display name ("frontend-agent" →
+// "Frontend Agent") for agents discovered on disk with no recorded name.
+func humanizeSlug(slug string) string {
+	parts := strings.Split(slug, "-")
+	for i, p := range parts {
+		if p != "" {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
-// ensureSessionDir creates the session dir and a .custard/.gitignore that
-// keeps transcripts out of accidental commits (the ignore file itself stays
-// committable).
-func ensureSessionDir(workspace, slug string) (string, error) {
-	dir := sessionDirFor(workspace, slug)
+// agentDirFor returns the agent's root dir; sessionsDirFor its --session-dir.
+func agentDirFor(workspace, slug string) string {
+	return filepath.Join(workspace, ".custard", "agents", slug)
+}
+
+func sessionsDirFor(workspace, slug string) string {
+	return filepath.Join(agentDirFor(workspace, slug), "sessions")
+}
+
+// ensureAgentDir creates the agent's sessions dir and a .custard/.gitignore
+// that keeps transcripts out of accidental commits (the ignore file itself
+// stays committable).
+func ensureAgentDir(workspace, slug string) (string, error) {
+	dir := sessionsDirFor(workspace, slug)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -67,50 +83,86 @@ func ensureSessionDir(workspace, slug string) (string, error) {
 	return dir, nil
 }
 
-// applyPendingRename performs a deferred session-dir move at launch time
-// (before pi starts, so no process holds the old path). It rewrites
-// LastSessionFile to the new location. If the target dir already exists the
-// move is skipped — old transcripts stay valid via their absolute path and
-// new sessions simply start in the new dir.
-func applyPendingRename(workspace string, ws *workspaceState) {
-	if ws.PendingSlug == "" || ws.PendingSlug == ws.SessionSlug {
-		ws.PendingSlug = ""
-		return
+// applyPendingRename performs a deferred agent-dir move at launch time
+// (before pi starts, so no process holds the old path) and returns the
+// agent's effective slug — the caller re-keys its map entry when it changes.
+// LastSessionFile is rewritten to the new location. If the target dir
+// already exists (another agent owns that slug) the move is cancelled: the
+// display name still changes, but the directory stays put.
+func applyPendingRename(workspace, slug string, a *agentState) string {
+	if a.PendingSlug == "" || a.PendingSlug == slug {
+		a.PendingSlug = ""
+		return slug
 	}
-	oldDir := sessionDirFor(workspace, ws.SessionSlug)
-	newDir := sessionDirFor(workspace, ws.PendingSlug)
-	if dirExists(oldDir) && !dirExists(newDir) {
+	newSlug := a.PendingSlug
+	a.PendingSlug = ""
+	oldDir := agentDirFor(workspace, slug)
+	newDir := agentDirFor(workspace, newSlug)
+	switch {
+	case !dirExists(oldDir) && !dirExists(newDir):
+		return newSlug // renamed before anything was written
+	case dirExists(oldDir) && !dirExists(newDir):
 		if err := os.Rename(oldDir, newDir); err == nil {
-			if ws.LastSessionFile != "" {
-				ws.LastSessionFile = filepath.Join(newDir, filepath.Base(ws.LastSessionFile))
+			if a.LastSessionFile != "" {
+				a.LastSessionFile = filepath.Join(newDir, "sessions", filepath.Base(a.LastSessionFile))
 			}
+			return newSlug
 		}
 	}
-	ws.SessionSlug = ws.PendingSlug
-	ws.PendingSlug = ""
+	return slug // collision or failed move: keep the old directory
+}
+
+// adoptLegacySessionFile moves a transcript that lives OUTSIDE the
+// workspace's .custard/agents tree (e.g. in the pre-workspace-storage global
+// sessions dir) into the agent's sessions dir at launch time, before pi has
+// it open.
+func adoptLegacySessionFile(workspace, slug string, a *agentState) {
+	if a.LastSessionFile == "" || !fileExists(a.LastSessionFile) {
+		return
+	}
+	root := filepath.Join(workspace, ".custard", "agents") + string(filepath.Separator)
+	if strings.HasPrefix(a.LastSessionFile, root) {
+		return // already inside the workspace
+	}
+	dst := filepath.Join(sessionsDirFor(workspace, slug), filepath.Base(a.LastSessionFile))
+	if fileExists(dst) {
+		return // name clash: leave the original where it is
+	}
+	if err := os.Rename(a.LastSessionFile, dst); err == nil {
+		a.LastSessionFile = dst
+	}
+}
+
+// migrateLegacyLayout upgrades the pre-agents layout
+// (.custard/sessions/<slug>/*.jsonl) to .custard/agents/<slug>/sessions/.
+// Idempotent; collisions leave the legacy dir untouched.
+func migrateLegacyLayout(workspace string) {
+	legacyRoot := filepath.Join(workspace, ".custard", "sessions")
+	entries, err := os.ReadDir(legacyRoot)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		src := filepath.Join(legacyRoot, e.Name())
+		dst := sessionsDirFor(workspace, e.Name())
+		if dirExists(dst) {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			continue
+		}
+		_ = os.Rename(src, dst)
+	}
+	// Remove the legacy root if fully migrated.
+	if rest, err := os.ReadDir(legacyRoot); err == nil && len(rest) == 0 {
+		_ = os.Remove(legacyRoot)
+	}
 }
 
 func dirExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()
-}
-
-// adoptLegacySessionFile moves a transcript that lives OUTSIDE the
-// workspace (e.g. in the pre-workspace-storage global sessions dir) into the
-// workspace's session dir at launch time, before pi has it open.
-func adoptLegacySessionFile(workspace string, ws *workspaceState) {
-	if ws.LastSessionFile == "" || !fileExists(ws.LastSessionFile) {
-		return
-	}
-	root := filepath.Join(workspace, ".custard", "sessions") + string(filepath.Separator)
-	if strings.HasPrefix(ws.LastSessionFile, root) {
-		return // already inside the workspace
-	}
-	dst := filepath.Join(sessionDirFor(workspace, ws.SessionSlug), filepath.Base(ws.LastSessionFile))
-	if fileExists(dst) {
-		return // name clash: leave the original where it is
-	}
-	if err := os.Rename(ws.LastSessionFile, dst); err == nil {
-		ws.LastSessionFile = dst
-	}
 }

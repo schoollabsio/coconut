@@ -17,7 +17,8 @@ function snap(seq: number): SnapshotMessage {
     type: 'snapshot',
     seq,
     state: {
-      sessionName: 'Restored Session',
+      agentName: 'Restored Agent',
+      agentSlug: 'restored-agent',
       workspace: { path: '/ws', name: 'ws' },
       agent: {
         status: 'idle',
@@ -35,7 +36,7 @@ describe('UIStore', () => {
   it('applies a snapshot as the state baseline', () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(10))
-    expect(s.state.sessionName).toBe('Restored Session')
+    expect(s.state.agentName).toBe('Restored Agent')
     expect(s.state.lastBackendSeq).toBe(10)
     expect(s.state.connected).toBe(true)
     expect(s.state.agent.messages).toHaveLength(1)

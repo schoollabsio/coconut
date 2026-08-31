@@ -385,31 +385,43 @@ func (s *Settings) EnsureBashWhitelist(prefixes ...string) {
 // ---------------------------------------------------------------------------
 
 // appState is persisted app bookkeeping: the last workspace plus, per
-// workspace, the session display name, its on-disk slug, a deferred rename
-// target, and pi's session file (for restart restore).
+// workspace, the set of known agents and which one was last open.
 type appState struct {
 	WorkspacePath string                     `json:"workspacePath"`
 	Workspaces    map[string]*workspaceState `json:"workspaces,omitempty"`
 
-	// Legacy flat fields (pre per-workspace tracking). Migrated into
+	// Legacy v1 flat fields (pre per-workspace tracking). Migrated into
 	// Workspaces on load; never written back out.
 	SessionName     string `json:"sessionName,omitempty"`
 	LastSessionFile string `json:"lastSessionFile,omitempty"`
 }
 
-// workspaceState tracks one workspace's session pointer.
+// workspaceState tracks one workspace's agents.
 type workspaceState struct {
-	SessionName     string `json:"sessionName"`
-	SessionSlug     string `json:"sessionSlug"`
+	LastAgent string                 `json:"lastAgent,omitempty"`
+	Agents    map[string]*agentState `json:"agents,omitempty"`
+
+	// Legacy v2 fields (single session per workspace, pre-agents).
+	// Migrated into Agents on load.
+	SessionName     string `json:"sessionName,omitempty"`
+	SessionSlug     string `json:"sessionSlug,omitempty"`
+	PendingSlug     string `json:"pendingSlug,omitempty"`
+	LastSessionFile string `json:"lastSessionFile,omitempty"`
+}
+
+// agentState tracks one agent: display name, a deferred rename target, and
+// the transcript to restore.
+type agentState struct {
+	Name            string `json:"name"`
 	PendingSlug     string `json:"pendingSlug,omitempty"`     // deferred rename, applied at next launch
 	LastSessionFile string `json:"lastSessionFile,omitempty"` // pi session transcript to restore
 }
 
-// ws returns the state entry for a workspace, creating a defaulted entry on
-// first use. Returns a throwaway entry for an empty path.
+// ws returns the state entry for a workspace, creating one on first use.
+// Returns a throwaway entry for an empty path.
 func (a *appState) ws(path string) *workspaceState {
 	if path == "" {
-		return &workspaceState{SessionName: "Untitled Session", SessionSlug: "untitled-session"}
+		return &workspaceState{}
 	}
 	if a.Workspaces == nil {
 		a.Workspaces = map[string]*workspaceState{}
@@ -419,13 +431,24 @@ func (a *appState) ws(path string) *workspaceState {
 		w = &workspaceState{}
 		a.Workspaces[path] = w
 	}
-	if w.SessionName == "" {
-		w.SessionName = "Untitled Session"
-	}
-	if w.SessionSlug == "" {
-		w.SessionSlug = Slugify(w.SessionName)
-	}
 	return w
+}
+
+// agent returns the state entry for an agent slug, creating a defaulted
+// entry on first use.
+func (w *workspaceState) agent(slug string) *agentState {
+	if w.Agents == nil {
+		w.Agents = map[string]*agentState{}
+	}
+	a := w.Agents[slug]
+	if a == nil {
+		a = &agentState{Name: humanizeSlug(slug)}
+		w.Agents[slug] = a
+	}
+	if a.Name == "" {
+		a.Name = humanizeSlug(slug)
+	}
+	return a
 }
 
 func statePath(configDir string) string { return filepath.Join(configDir, "state.json") }
@@ -437,11 +460,11 @@ func loadState(configDir string) appState {
 		return st
 	}
 	_ = json.Unmarshal(b, &st)
-	// Migrate the legacy flat shape into the per-workspace map.
+	// v1 → v2: fold the flat shape into the per-workspace map.
 	if st.WorkspacePath != "" && (st.SessionName != "" || st.LastSessionFile != "") {
 		name := st.SessionName
 		if name == "" {
-			name = "Untitled Session"
+			name = "Primary"
 		}
 		st.Workspaces = map[string]*workspaceState{
 			st.WorkspacePath: {
@@ -453,6 +476,26 @@ func loadState(configDir string) appState {
 	}
 	st.SessionName = ""
 	st.LastSessionFile = ""
+	// v2 → v3: single session per workspace → agents map.
+	for _, w := range st.Workspaces {
+		if w.SessionName == "" && w.LastSessionFile == "" {
+			continue
+		}
+		slug := w.SessionSlug
+		if slug == "" {
+			slug = Slugify(w.SessionName)
+		}
+		a := w.agent(slug)
+		if w.SessionName != "" {
+			a.Name = w.SessionName
+		}
+		a.PendingSlug = w.PendingSlug
+		a.LastSessionFile = w.LastSessionFile
+		if w.LastAgent == "" {
+			w.LastAgent = slug
+		}
+		w.SessionName, w.SessionSlug, w.PendingSlug, w.LastSessionFile = "", "", "", ""
+	}
 	return st
 }
 

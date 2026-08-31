@@ -77,6 +77,10 @@ type server struct {
 	aborted   atomic.Bool // set by `abort`; engine skips emits until the next waitFor match
 	streaming atomic.Bool // true between agent_start and agent_end/agent_settled
 
+	// sessionFile simulates pi's current transcript path; bumped by
+	// new_session, replaced by switch_session.
+	sessionFile atomic.Value // string
+
 	// Waiters registered by the scenario engine. At most one of each is
 	// active at a time (the engine is sequential).
 	mu         sync.Mutex
@@ -92,12 +96,14 @@ type server struct {
 }
 
 func newServer() *server {
-	return &server{
+	s := &server{
 		w:     &writer{enc: json.NewEncoder(os.Stdout)},
 		st:    newState(),
 		cmdCh: make(chan Command),
 		done:  make(chan struct{}),
 	}
+	s.sessionFile.Store("/fakepi/session-1.jsonl")
+	return s
 }
 
 func main() {
@@ -172,7 +178,13 @@ func (s *server) dispatch(c Command) {
 	case "new_session":
 		s.st.clear()
 		s.aborted.Store(false)
+		s.newSessionFile()
 		s.respondOK(c, map[string]any{"cancelled": false})
+	case "switch_session":
+		if p, _ := c.Msg["sessionPath"].(string); p != "" {
+			s.sessionFile.Store(p)
+		}
+		s.respondOK(c, nil)
 	case "get_state":
 		s.respondOK(c, s.stateData())
 	case "get_messages":
@@ -337,6 +349,17 @@ func fakeModel() map[string]any {
 	}
 }
 
+// newSessionFile simulates pi creating a fresh transcript per session.
+func (s *server) newSessionFile() {
+	cur, _ := s.sessionFile.Load().(string)
+	n := 1
+	var parsed int
+	if _, err := fmt.Sscanf(cur, "/fakepi/session-%d.jsonl", &parsed); err == nil {
+		n = parsed + 1
+	}
+	s.sessionFile.Store(fmt.Sprintf("/fakepi/session-%d.jsonl", n))
+}
+
 func (s *server) stateData() map[string]any {
 	d := map[string]any{
 		"model":                 fakeModel(),
@@ -345,7 +368,7 @@ func (s *server) stateData() map[string]any {
 		"isCompacting":          false,
 		"steeringMode":          "one-at-a-time",
 		"followUpMode":          "one-at-a-time",
-		"sessionFile":           nil,
+		"sessionFile":           s.sessionFile.Load(),
 		"sessionId":             "fake-session",
 		"autoCompactionEnabled": true,
 		"messageCount":          s.st.count(),

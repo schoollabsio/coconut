@@ -16,10 +16,11 @@ import (
 // Sidecar lifecycle (all actor-only: *Locked methods run on the actor)
 // ---------------------------------------------------------------------------
 
-// startSidecarLocked launches the pi sidecar for the current workspace.
-// When restore is true and a previous session file is known, the session
-// is switched back and messages rebuilt before done is called.
-func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
+// startSidecarLocked launches the pi sidecar for an agent in the current
+// workspace. switchTo (a transcript path) forces a session switch;
+// otherwise the agent's recorded last session is restored unless fresh is
+// true. Messages are rebuilt before done is called.
+func (e *Engine) startSidecarLocked(agentSlug, switchTo string, fresh bool, done func(error)) {
 	if e.state.workspacePath == "" {
 		if done != nil {
 			done(errors.New("no workspace configured"))
@@ -29,17 +30,29 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 
 	s := e.state.settings
 	ws := e.state.app.ws(e.state.workspacePath)
-	applyPendingRename(e.state.workspacePath, ws)
-	sessionDir, err := ensureSessionDir(e.state.workspacePath, ws.SessionSlug)
+	agent := ws.agent(agentSlug)
+	if effective := applyPendingRename(e.state.workspacePath, agentSlug, agent); effective != agentSlug {
+		// Deferred rename landed: re-key the agent under its new slug.
+		delete(ws.Agents, agentSlug)
+		ws.Agents[effective] = agent
+		if ws.LastAgent == agentSlug {
+			ws.LastAgent = effective
+		}
+		agentSlug = effective
+	}
+	sessionDir, err := ensureAgentDir(e.state.workspacePath, agentSlug)
 	if err != nil {
 		if done != nil {
 			done(err)
 		}
 		return
 	}
-	adoptLegacySessionFile(e.state.workspacePath, ws)
+	adoptLegacySessionFile(e.state.workspacePath, agentSlug, agent)
+	ws.LastAgent = agentSlug
+	e.state.agentSlug = agentSlug
+	e.state.agentName = agent.Name
 	_ = saveState(e.cfg.ConfigDir, e.state.app)
-	spec := buildLaunchSpec(e.cfg, s, ws.SessionName, e.state.workspacePath, sessionDir)
+	spec := buildLaunchSpec(e.cfg, s, agent.Name, e.state.workspacePath, sessionDir)
 	if err := prepareSidecarConfig(e.cfg.ConfigDir, s); err != nil {
 		if done != nil {
 			done(err)
@@ -95,17 +108,19 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 			SessionName string `json:"sessionName"`
 		}
 		_ = json.Unmarshal(resp.Data, &st)
-		ws := e.state.app.ws(e.state.workspacePath)
-		if st.SessionName != "" {
-			e.state.sessionName = st.SessionName
-			ws.SessionName = st.SessionName
+		agent := e.state.app.ws(e.state.workspacePath).agent(e.state.agentSlug)
+		if st.SessionName != "" && st.SessionName != agent.Name {
+			// pi is display-name authoritative after a restore.
+			e.state.agentName = st.SessionName
+			agent.Name = st.SessionName
 		}
 
 		finish := func() {
 			e.rebuildMessagesLocked(func() {
 				e.emitEvent(protocol.EvSessionRestored, map[string]any{
 					"workspacePath": e.state.workspacePath,
-					"sessionName":   e.state.sessionName,
+					"agentName":     e.state.agentName,
+					"agentSlug":     e.state.agentSlug,
 				}, "")
 				if done != nil {
 					done(nil)
@@ -113,16 +128,22 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 			})
 		}
 
-		if st.SessionFile != "" && st.SessionFile != ws.LastSessionFile {
-			ws.LastSessionFile = st.SessionFile
+		if st.SessionFile != "" && st.SessionFile != agent.LastSessionFile {
+			agent.LastSessionFile = st.SessionFile
 			_ = saveState(e.cfg.ConfigDir, e.state.app)
 		}
 
-		last := ws.LastSessionFile
-		if restore && last != "" && st.SessionFile != last && fileExists(last) {
-			e.sendPi("switch_session", map[string]any{"sessionPath": last}, func(resp piadapter.Response, err error) {
+		target := switchTo
+		if target == "" && !fresh {
+			target = agent.LastSessionFile
+		}
+		if target != "" && st.SessionFile != target && fileExists(target) {
+			e.sendPi("switch_session", map[string]any{"sessionPath": target}, func(resp piadapter.Response, err error) {
 				if err != nil || !resp.Success {
 					e.notify("warning", "could not restore previous session; starting fresh")
+				} else {
+					agent.LastSessionFile = target
+					_ = saveState(e.cfg.ConfigDir, e.state.app)
 				}
 				finish()
 			})
@@ -180,7 +201,7 @@ func (e *Engine) onSidecarGone(err error) {
 
 	// Single automatic restart attempt with session restore.
 	e.state.resetAgent()
-	e.startSidecarLocked(true, func(err error) {
+	e.startSidecarLocked(e.state.agentSlug, "", false, func(err error) {
 		if err != nil {
 			e.notify("error", "sidecar restart failed: "+err.Error())
 			return
@@ -193,7 +214,7 @@ func (e *Engine) onSidecarGone(err error) {
 // launch spec assembly (incl. the fakepi dev seam)
 // ---------------------------------------------------------------------------
 
-func buildLaunchSpec(cfg EngineConfig, s Settings, sessionName, workspace, sessionDir string) piadapter.LaunchSpec {
+func buildLaunchSpec(cfg EngineConfig, s Settings, agentName, workspace, sessionDir string) piadapter.LaunchSpec {
 	agentDir := filepath.Join(cfg.ConfigDir, "agent")
 
 	binary := os.Getenv("CUSTARD_PI_BINARY")
@@ -217,7 +238,7 @@ func buildLaunchSpec(cfg EngineConfig, s Settings, sessionName, workspace, sessi
 		APIKey:        sidecarAPIKey(s),
 		APIKeyEnv:     sidecarKeyEnvVars(s),
 		BashWhitelist: s.BashWhitelist,
-		SessionName:   sessionName,
+		SessionName:   agentName,
 	}, workspace, agentDir, sessionDir, cfg.ExtensionPath, binary)
 }
 

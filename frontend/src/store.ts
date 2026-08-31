@@ -10,6 +10,7 @@ import { useSyncExternalStore } from 'react'
 import type {
   AgentStatus,
   ApprovalRequest,
+  AgentSummary,
   BackendEvent,
   BackendMessage,
   ChatMessage,
@@ -18,6 +19,7 @@ import type {
   SnapshotMessage,
   StreamMessage,
   ToolCall,
+  WorkspaceChangedPayload,
   WorkspaceInfo,
 } from './protocol'
 import { Ev, Stream } from './protocol'
@@ -31,7 +33,8 @@ export interface Notification {
 export interface UIState {
   connected: boolean
   lastBackendSeq: number
-  sessionName: string
+  agentName: string
+  agentSlug: string
   workspace: WorkspaceInfo | null
   needsWorkspace: boolean
   agent: {
@@ -46,13 +49,17 @@ export interface UIState {
   /** Raw settings.yaml text; edited in the settings modal. */
   settingsYaml: string | null
   settingsOpen: boolean
+  /** Agent/session picker modal. */
+  agentPickerOpen: boolean
+  agentList: AgentSummary[]
   notifications: Notification[]
 }
 
 const initialState: UIState = {
   connected: false,
   lastBackendSeq: 0,
-  sessionName: 'Untitled Session',
+  agentName: 'Untitled Agent',
+  agentSlug: '',
   workspace: null,
   needsWorkspace: false,
   agent: { status: 'idle', messages: [], toolCalls: [] },
@@ -61,6 +68,8 @@ const initialState: UIState = {
   focusedApprovalId: null,
   settingsYaml: null,
   settingsOpen: false,
+  agentPickerOpen: false,
+  agentList: [],
   notifications: [],
 }
 
@@ -98,11 +107,19 @@ export class UIStore {
   // local UI events (PLAN.md §6.3 style)
   // ------------------------------------------------------------------
 
-  setSessionNameLocal(name: string) {
-    this.set({ sessionName: name })
+  setAgentNameLocal(name: string) {
+    this.set({ agentName: name })
   }
   setNeedsWorkspace(needs: boolean) {
     this.set({ needsWorkspace: needs })
+  }
+  openAgentPicker(agents: AgentSummary[]) {
+    this.set({ agentPickerOpen: true, agentList: agents })
+    this.notify()
+  }
+  closeAgentPicker() {
+    this.set({ agentPickerOpen: false })
+    this.notify()
   }
   setSettingsOpen(open: boolean) {
     this.set({ settingsOpen: open })
@@ -142,7 +159,8 @@ export class UIStore {
       connected: true,
       needsWorkspace: !(s.workspace?.path),
       lastBackendSeq: snap.seq,
-      sessionName: s.sessionName || 'Untitled Session',
+      agentName: s.agentName || 'Untitled Agent',
+      agentSlug: s.agentSlug || '',
       workspace: s.workspace?.path ? s.workspace : null,
       agent: {
         status: s.agent.status,
@@ -234,16 +252,34 @@ export class UIStore {
       case Ev.SettingsChanged:
         this.set({ settingsYaml: (p as unknown as SettingsYAML).yaml })
         break
-      case Ev.WorkspaceChanged:
-        this.set({ workspace: p as unknown as WorkspaceInfo, needsWorkspace: false })
-        break
-      case Ev.SessionRestored: {
-        this.set({
-          sessionName: (p?.sessionName as string) || this.state.sessionName,
-          needsWorkspace: false,
-        })
+      case Ev.WorkspaceChanged: {
+        const wc = p as unknown as WorkspaceChangedPayload
+        this.set({ workspace: wc.workspace, needsWorkspace: false, agentPickerOpen: false })
+        if (wc.needsPick && wc.agents?.length) {
+          this.set({ agentPickerOpen: true, agentList: wc.agents })
+        }
         break
       }
+      case Ev.SessionRestored: {
+        this.set({
+          agentName: (p?.agentName as string) || this.state.agentName,
+          agentSlug: (p?.agentSlug as string) || this.state.agentSlug,
+          needsWorkspace: false,
+          agentPickerOpen: false,
+        })
+        // The backend rebuilt its message history (workspace/agent switch,
+        // restore, crash restart) — pull the authoritative snapshot.
+        this.resync?.()
+        break
+      }
+      case Ev.AgentReset:
+        this.set({
+          agent: { status: 'idle', messages: [], toolCalls: [] },
+          pendingApprovals: [],
+          focusedApprovalId: null,
+          content: null,
+        })
+        break
       case Ev.Notification:
         this.pushNotification((p?.level as Notification['level']) ?? 'info', String(p?.message ?? ''))
         break
@@ -268,7 +304,7 @@ export class UIStore {
     this.state = { ...this.state, agent: { ...this.state.agent, ...patch } }
   }
 
-  private pushNotification(level: Notification['level'], message: string) {
+  pushNotification(level: Notification['level'], message: string) {
     if (!message) return
     const n: Notification = { id: ++this.notifCounter, level, message }
     this.state = { ...this.state, notifications: [...this.state.notifications, n].slice(-5) }

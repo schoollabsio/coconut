@@ -17,8 +17,14 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 	switch cmd.Name {
 	case protocol.CmdSessionRestore:
 		e.cmdSessionRestore(cmd, respond)
-	case protocol.CmdSessionRename:
-		e.cmdSessionRename(cmd, respond)
+	case protocol.CmdAgentOpen:
+		e.cmdAgentOpen(cmd, respond)
+	case protocol.CmdAgentRename:
+		e.cmdAgentRename(cmd, respond)
+	case protocol.CmdAgentReset:
+		e.cmdAgentReset(cmd, respond)
+	case protocol.CmdAgentList:
+		respond <- respondOK(cmd, map[string]any{"agents": e.scanAgentsLocked()})
 	case protocol.CmdWorkspaceSet:
 		e.cmdWorkspaceSet(cmd, respond)
 	case protocol.CmdAgentStart:
@@ -63,6 +69,8 @@ func (e *Engine) viaPi(cmd protocol.Command, respond chan []byte, name string, f
 // session / workspace
 // ---------------------------------------------------------------------------
 
+// cmdSessionRestore is the startup bootstrap: reopen the last workspace's
+// last agent (fast path — no picker at launch).
 func (e *Engine) cmdSessionRestore(cmd protocol.Command, respond chan []byte) {
 	if e.state.workspacePath == "" {
 		respond <- respondOK(cmd, map[string]any{"needsWorkspace": true})
@@ -71,37 +79,118 @@ func (e *Engine) cmdSessionRestore(cmd protocol.Command, respond chan []byte) {
 	if e.piUp {
 		respond <- respondOK(cmd, map[string]any{
 			"needsWorkspace": false,
-			"sessionName":    e.state.sessionName,
+			"agentName":      e.state.agentName,
+			"agentSlug":      e.state.agentSlug,
 		})
 		return
 	}
-	e.startSidecarLocked(true, func(err error) {
+	slug := e.state.app.ws(e.state.workspacePath).LastAgent
+	if slug == "" {
+		slug = "primary"
+	}
+	e.startSidecarLocked(slug, "", false, func(err error) {
 		if err != nil {
 			respond <- respondErr(cmd, "pi_start_failed", err.Error())
 			return
 		}
 		respond <- respondOK(cmd, map[string]any{
 			"needsWorkspace": false,
-			"sessionName":    e.state.sessionName,
+			"agentName":      e.state.agentName,
+			"agentSlug":      e.state.agentSlug,
 		})
 	})
 }
 
-func (e *Engine) cmdSessionRename(cmd protocol.Command, respond chan []byte) {
-	var p protocol.SessionRenamePayload
-	if err := json.Unmarshal(cmd.Payload, &p); err != nil || p.Name == "" {
-		respond <- respondErr(cmd, "bad_payload", "session.rename needs {name}")
+// cmdAgentOpen opens (or creates) an agent, optionally at a specific
+// session or forcing a fresh one. Restarts the world, like workspace.set.
+func (e *Engine) cmdAgentOpen(cmd protocol.Command, respond chan []byte) {
+	var p protocol.AgentOpenPayload
+	if err := json.Unmarshal(cmd.Payload, &p); err != nil || (p.Slug == "" && p.Name == "") {
+		respond <- respondErr(cmd, "bad_payload", "agent.open needs {slug} or {name}")
 		return
 	}
-	e.state.sessionName = p.Name
-	if e.state.workspacePath != "" {
-		ws := e.state.app.ws(e.state.workspacePath)
-		ws.SessionName = p.Name
-		// The physical session-dir move is deferred to next launch: pi
+	if e.state.workspacePath == "" {
+		respond <- respondErr(cmd, "no_workspace", "pick a workspace first")
+		return
+	}
+	slug := p.Slug
+	if slug == "" {
+		slug = Slugify(p.Name)
+	}
+	if p.Name != "" {
+		e.state.app.ws(e.state.workspacePath).agent(slug).Name = p.Name
+	}
+
+	e.stopSidecarLocked()
+	e.state.resetAgent()
+	e.state.content = nil
+	e.startSidecarLocked(slug, p.SessionFile, p.New, func(err error) {
+		if err != nil {
+			respond <- respondErr(cmd, "pi_start_failed", err.Error())
+			return
+		}
+		respond <- respondOK(cmd, map[string]any{
+			"agentName": e.state.agentName,
+			"agentSlug": e.state.agentSlug,
+		})
+	})
+}
+
+// cmdAgentReset starts a new underlying pi session for the current agent;
+// the old transcript stays on disk.
+func (e *Engine) cmdAgentReset(cmd protocol.Command, respond chan []byte) {
+	if !e.piUp || e.pi == nil {
+		respond <- respondErr(cmd, "pi_not_running", "agent sidecar is not running")
+		return
+	}
+	e.viaPi(cmd, respond, "new_session", nil, func(resp piadapter.Response, err error) []byte {
+		if err != nil || !resp.Success {
+			return respondErr(cmd, "pi_internal_error", errString(err, resp.Err))
+		}
+		// Track the fresh transcript and clear the conversation view.
+		var st struct {
+			SessionFile string `json:"sessionFile"`
+		}
+		// new_session's response has no file; ask get_state.
+		e.sendPi("get_state", nil, func(gs piadapter.Response, gerr error) {
+			if gerr == nil && gs.Success {
+				_ = json.Unmarshal(gs.Data, &st)
+				if st.SessionFile != "" {
+					agent := e.state.app.ws(e.state.workspacePath).agent(e.state.agentSlug)
+					agent.LastSessionFile = st.SessionFile
+					_ = saveState(e.cfg.ConfigDir, e.state.app)
+				}
+			}
+			e.state.resetAgent()
+			e.state.content = nil
+			e.emitEvent(protocol.EvContentUpdated, nil, "")
+			e.emitEvent(protocol.EvAgentReset, map[string]any{
+				"agentName": e.state.agentName,
+				"agentSlug": e.state.agentSlug,
+			}, "")
+		})
+		return respondOK(cmd, map[string]any{
+			"agentName": e.state.agentName,
+			"agentSlug": e.state.agentSlug,
+		})
+	})
+}
+
+func (e *Engine) cmdAgentRename(cmd protocol.Command, respond chan []byte) {
+	var p protocol.AgentRenamePayload
+	if err := json.Unmarshal(cmd.Payload, &p); err != nil || p.Name == "" {
+		respond <- respondErr(cmd, "bad_payload", "agent.rename needs {name}")
+		return
+	}
+	e.state.agentName = p.Name
+	if e.state.workspacePath != "" && e.state.agentSlug != "" {
+		agent := e.state.app.ws(e.state.workspacePath).agent(e.state.agentSlug)
+		agent.Name = p.Name
+		// The physical agent-dir move is deferred to next launch: pi
 		// caches the transcript's absolute path and could rewrite the old
 		// location mid-session (compaction), splitting the transcript.
-		if slug := Slugify(p.Name); slug != ws.SessionSlug {
-			ws.PendingSlug = slug
+		if slug := Slugify(p.Name); slug != e.state.agentSlug {
+			agent.PendingSlug = slug
 		}
 	}
 	_ = saveState(e.cfg.ConfigDir, e.state.app)
@@ -158,16 +247,29 @@ func (e *Engine) cmdWorkspaceSet(cmd protocol.Command, respond chan []byte) {
 	e.state.content = nil
 	e.state.workspacePath = p.Path
 	e.state.app.WorkspacePath = p.Path
-	e.state.sessionName = e.state.app.ws(p.Path).SessionName
 	_ = saveState(e.cfg.ConfigDir, e.state.app)
-	e.emitEvent(protocol.EvWorkspaceChanged, e.state.workspaceInfo(), cmd.ID)
 
-	e.startSidecarLocked(true, func(err error) {
+	// Inventory existing agents: when any exist, the frontend asks the user
+	// which agent/session to open (agent.open) instead of auto-starting.
+	agents := e.scanAgentsLocked()
+	payload := map[string]any{
+		"workspace": e.state.workspaceInfo(),
+		"agents":    agents,
+		"needsPick": len(agents) > 0,
+	}
+	e.emitEvent(protocol.EvWorkspaceChanged, payload, cmd.ID)
+
+	if len(agents) > 0 {
+		respond <- respondOK(cmd, payload)
+		return
+	}
+	// Fresh workspace: start the default agent immediately.
+	e.startSidecarLocked("primary", "", false, func(err error) {
 		if err != nil {
 			respond <- respondErr(cmd, "pi_start_failed", err.Error())
 			return
 		}
-		respond <- respondOK(cmd, map[string]any{"workspace": e.state.workspaceInfo()})
+		respond <- respondOK(cmd, payload)
 	})
 }
 
@@ -312,7 +414,7 @@ func (e *Engine) cmdSettingsSave(cmd protocol.Command, respond chan []byte) {
 	if e.piUp {
 		e.stopSidecarLocked()
 		e.state.resetAgent()
-		e.startSidecarLocked(true, func(err error) {
+		e.startSidecarLocked(e.state.agentSlug, "", false, func(err error) {
 			if err != nil {
 				respond <- respondErr(cmd, "pi_start_failed", err.Error())
 				return

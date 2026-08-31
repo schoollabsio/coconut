@@ -118,7 +118,10 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 	}
 	e.state.app = loadState(cfg.ConfigDir)
 	e.state.workspacePath = e.state.app.WorkspacePath
-	e.state.sessionName = e.state.app.ws(e.state.workspacePath).SessionName
+	if slug := e.state.app.ws(e.state.workspacePath).LastAgent; slug != "" {
+		e.state.agentSlug = slug
+		e.state.agentName = e.state.app.ws(e.state.workspacePath).agent(slug).Name
+	}
 	return e, nil
 }
 

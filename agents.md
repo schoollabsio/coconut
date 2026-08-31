@@ -195,10 +195,13 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 ### Commands (frontend → backend)
 | Command | Payload | Description |
 |---|---|---|
-| `session.restore` | `{}` | Restore last session on startup |
-| `session.rename` | `{name}` | Rename the current session |
+| `session.restore` | `{}` | Startup bootstrap: reopen last workspace's last agent |
+| `agent.open` | `{slug\|name, sessionFile?, new?}` | Open/create an agent, optionally at a session |
+| `agent.rename` | `{name}` | Rename the current agent (dir move deferred) |
+| `agent.reset` | `{}` | New underlying pi session for the current agent |
+| `agent.list` | `{}` | Scan workspace agents + sessions |
 | `workspace.pick` | `{}` | Open native directory picker |
-| `workspace.set` | `{path}` | Set the workspace folder (restarts sidecar) |
+| `workspace.set` | `{path}` | Set workspace; responds `{workspace, agents, needsPick}` — when agents exist the sidecar does NOT auto-start (frontend shows the picker) |
 | `agent.start` | `{prompt}` | Start an agent run |
 | `agent.cancel` | `{}` | Cancel current agent run |
 | `agent.approval.respond` | `{approvalId, decision}` | Respond to an approval |
@@ -209,8 +212,9 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 ### Events (backend → frontend)
 | Event | Stream? | Description |
 |---|---|---|
-| `session.restored` | No | Session restored |
-| `workspace.changed` | No | Workspace path changed |
+| `session.restored` | No | Agent/session opened; frontend re-pulls a snapshot |
+| `workspace.changed` | No | Workspace changed; payload `{workspace, agents, needsPick}` |
+| `agent.session.reset` | No | New pi session started in place (transcript kept on disk) |
 | `agent.started` | No | Agent session started |
 | `agent.status.changed` | No | Agent status (idle/thinking/streaming/awaiting_approval/error) |
 | `agent.message.appended` | No | New message in conversation |
@@ -281,17 +285,32 @@ approval requests; `notify` method events pass through as notifications.
 - `buildLaunchSpec` — assembles the pi command line; checks
   `CUSTARD_PI_BINARY` for dev/fakepi.
 
-### Session storage (`internal/core/slug.go`)
-Sessions live IN the workspace: `<workspace>/.custard/sessions/<slug>/
-<timestamp>_<uuid>.jsonl`, where `<slug>` is the slugified session name from
-the header (`My Session` → `my-session`). `state.json` tracks sessions
-per-workspace (`workspaces[path] = {sessionName, sessionSlug, pendingSlug,
-lastSessionFile}`). Renames update the live session via `set_session_name`
-immediately; the directory move is deferred to the next sidecar launch
-(`pendingSlug`, applied by `applyPendingRename`) because pi caches the
-transcript's absolute path. Legacy transcripts outside the workspace are
-adopted (moved in) at launch. `.custard/.gitignore` (`*`) keeps transcripts
-out of accidental commits.
+### Agent + session storage (`internal/core/slug.go`, `agents.go`)
+The top-left name is a persistent, workspace-scoped AGENT identity; each
+agent owns a run of pi sessions:
+
+```
+<workspace>/.custard/agents/<agent-slug>/sessions/<timestamp>_<uuid>.jsonl
+```
+
+The slug derives from the agent name (`Frontend Agent` → `frontend-agent`).
+`state.json` tracks, per workspace: `lastAgent` + `agents[slug] = {name,
+pendingSlug, lastSessionFile}` (with v1/v2 migration on load). Renames
+update the live session via `set_session_name` immediately; the directory
+move is deferred to the next sidecar launch (`pendingSlug`, applied by
+`applyPendingRename`, which re-keys the map) because pi caches the
+transcript's absolute path — a mid-session move risks compaction splitting
+the transcript. Legacy transcripts outside the workspace are adopted (moved
+in) at launch; the pre-agents `.custard/sessions/<slug>/` layout migrates
+into `agents/<slug>/sessions/` on scan. `.custard/.gitignore` (`*`) keeps
+transcripts out of accidental commits.
+
+`scanAgentsLocked` (`agents.go`) inventories the workspace for the picker:
+per agent, sessions newest-first with start time (from the `session` header
+line), preview (first user message), size, and current markers. Abandoned
+empty launch transcripts (pi creates one per process start, then
+`switch_session` walks away) are hidden. Agent display names resolve:
+state.json → newest session's `session_info.name` → humanized slug.
 
 ### Settings (`internal/core/settings.go`)
 `settings.yaml` is user-editable YAML. Backend owns parsing and validation:
@@ -345,7 +364,8 @@ Bootstrapper:
 effects. Cleanup must fully undo setup; setup must be safe to run twice.
 
 ### Components (`frontend/src/components/`)
-- **Header.tsx** — session name, settings button, agent status indicator.
+- **Header.tsx** — agent name (rename), agents/sessions picker button, new-session button, workspace picker, settings gear.
+- **AgentPicker.tsx** — agent/session browser modal: agents left, sessions right, new-agent + new-session actions.
 - **Chat.tsx** — message list with streaming text; prompt input.
 - **ToolLog.tsx** — tool call timeline (started/completed/pending_approval).
 - **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny) or

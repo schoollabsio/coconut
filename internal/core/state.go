@@ -15,7 +15,8 @@ type domainState struct {
 	app         appState // persisted app bookkeeping (state.json)
 
 	workspacePath string
-	sessionName   string
+	agentSlug     string
+	agentName     string
 
 	agentStatus string
 	messages    []protocol.ChatMessage
@@ -101,7 +102,8 @@ func (s *domainState) snapshot() protocol.SnapshotState {
 		content = &c
 	}
 	return protocol.SnapshotState{
-		SessionName:      s.sessionName,
+		AgentName:        s.agentName,
+		AgentSlug:        s.agentSlug,
 		Workspace:        s.workspaceInfo(),
 		Agent:            protocol.AgentState{Status: s.agentStatus, Messages: msgs, ToolCalls: calls},
 		Content:          content,

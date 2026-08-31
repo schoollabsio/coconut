@@ -15,10 +15,11 @@ func TestSlugify(t *testing.T) {
 		"under_score":        "under-score",
 		"a/b\\c:d":           "a-b-c-d",
 		"Café":               "caf",
-		"":                   "session",
-		"!!!":                "session",
+		"":                   "agent",
+		"!!!":                "agent",
 		"already-slugged":    "already-slugged",
 		" trailing- ":        "trailing",
+		"Frontend Agent":     "frontend-agent",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {
@@ -27,7 +28,7 @@ func TestSlugify(t *testing.T) {
 	}
 }
 
-func TestLoadStateMigratesLegacy(t *testing.T) {
+func TestLoadStateMigratesLegacyV1(t *testing.T) {
 	dir := t.TempDir()
 	legacy := `{"workspacePath":"/ws","sessionName":"My Session","lastSessionFile":"/old/sessions/abc.jsonl"}`
 	if err := os.WriteFile(statePath(dir), []byte(legacy), 0o644); err != nil {
@@ -36,12 +37,12 @@ func TestLoadStateMigratesLegacy(t *testing.T) {
 
 	st := loadState(dir)
 	ws := st.ws("/ws")
-	if ws.SessionName != "My Session" || ws.SessionSlug != "my-session" || ws.LastSessionFile != "/old/sessions/abc.jsonl" {
-		t.Fatalf("legacy state not migrated: %+v", ws)
+	a := ws.Agents["my-session"]
+	if a == nil || a.Name != "My Session" || a.LastSessionFile != "/old/sessions/abc.jsonl" {
+		t.Fatalf("v1 state not migrated to agents: %+v", ws)
 	}
-	// Legacy fields must not round-trip back out.
-	if st.SessionName != "" || st.LastSessionFile != "" {
-		t.Fatal("legacy fields should be cleared after migration")
+	if ws.LastAgent != "my-session" {
+		t.Fatalf("lastAgent not set: %+v", ws)
 	}
 	out, _ := json.Marshal(st)
 	var roundtrip map[string]any
@@ -51,11 +52,29 @@ func TestLoadStateMigratesLegacy(t *testing.T) {
 	}
 }
 
+func TestLoadStateMigratesLegacyV2(t *testing.T) {
+	dir := t.TempDir()
+	v2 := `{"workspacePath":"/ws","workspaces":{"/ws":{"sessionName":"Renamed","sessionSlug":"old-slug","pendingSlug":"renamed","lastSessionFile":"/ws/.custard/sessions/old-slug/x.jsonl"}}}`
+	if err := os.WriteFile(statePath(dir), []byte(v2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st := loadState(dir)
+	ws := st.ws("/ws")
+	a := ws.Agents["old-slug"]
+	if a == nil || a.Name != "Renamed" || a.PendingSlug != "renamed" || a.LastSessionFile == "" {
+		t.Fatalf("v2 state not migrated to agents: %+v", ws.Agents)
+	}
+	if ws.SessionName != "" || ws.SessionSlug != "" || ws.LastAgent != "old-slug" {
+		t.Fatalf("legacy v2 fields not cleared: %+v", ws)
+	}
+}
+
 func TestApplyPendingRename(t *testing.T) {
 	workspace := t.TempDir()
 
-	t.Run("moves dir and rewrites file pointer", func(t *testing.T) {
-		oldDir := sessionDirFor(workspace, "my-session")
+	t.Run("moves agent dir, rewrites file pointer, reports new slug", func(t *testing.T) {
+		oldDir := sessionsDirFor(workspace, "old-name")
 		if err := os.MkdirAll(oldDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -63,106 +82,101 @@ func TestApplyPendingRename(t *testing.T) {
 		if err := os.WriteFile(transcript, []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ws := &workspaceState{SessionName: "Renamed", SessionSlug: "my-session", PendingSlug: "renamed", LastSessionFile: transcript}
+		a := &agentState{Name: "New Name", PendingSlug: "new-name", LastSessionFile: transcript}
 
-		applyPendingRename(workspace, ws)
+		got := applyPendingRename(workspace, "old-name", a)
 
-		if ws.PendingSlug != "" || ws.SessionSlug != "renamed" {
-			t.Fatalf("slug state wrong after rename: %+v", ws)
+		if got != "new-name" || a.PendingSlug != "" {
+			t.Fatalf("effective slug = %q, pending = %q", got, a.PendingSlug)
 		}
-		moved := filepath.Join(sessionDirFor(workspace, "renamed"), "2026-01-01_abc.jsonl")
-		if ws.LastSessionFile != moved || !fileExists(moved) {
-			t.Fatalf("transcript not moved: %q (exists=%v)", ws.LastSessionFile, fileExists(moved))
+		moved := filepath.Join(sessionsDirFor(workspace, "new-name"), "2026-01-01_abc.jsonl")
+		if a.LastSessionFile != moved || !fileExists(moved) {
+			t.Fatalf("transcript not moved: %q", a.LastSessionFile)
 		}
-		if dirExists(oldDir) {
-			t.Fatal("old slug dir still present")
+		if dirExists(agentDirFor(workspace, "old-name")) {
+			t.Fatal("old agent dir still present")
 		}
 	})
 
-	t.Run("collision keeps old dir, adopts new slug going forward", func(t *testing.T) {
+	t.Run("collision cancels the move, keeps old slug", func(t *testing.T) {
 		for _, slug := range []string{"alpha", "beta"} {
-			if err := os.MkdirAll(sessionDirFor(workspace, slug), 0o755); err != nil {
+			if err := os.MkdirAll(sessionsDirFor(workspace, slug), 0o755); err != nil {
 				t.Fatal(err)
 			}
 		}
-		oldFile := filepath.Join(sessionDirFor(workspace, "alpha"), "t.jsonl")
+		oldFile := filepath.Join(sessionsDirFor(workspace, "alpha"), "t.jsonl")
 		if err := os.WriteFile(oldFile, []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		ws := &workspaceState{SessionName: "Beta", SessionSlug: "alpha", PendingSlug: "beta", LastSessionFile: oldFile}
+		a := &agentState{Name: "Beta", PendingSlug: "beta", LastSessionFile: oldFile}
 
-		applyPendingRename(workspace, ws)
-
-		if ws.SessionSlug != "beta" || ws.PendingSlug != "" {
-			t.Fatalf("slug state wrong: %+v", ws)
+		if got := applyPendingRename(workspace, "alpha", a); got != "alpha" {
+			t.Fatalf("collision should keep old slug, got %q", got)
 		}
-		if ws.LastSessionFile != oldFile || !fileExists(oldFile) {
+		if a.LastSessionFile != oldFile || !fileExists(oldFile) {
 			t.Fatal("existing transcript must stay put on collision")
 		}
-		if !dirExists(sessionDirFor(workspace, "alpha")) {
-			t.Fatal("collision move should not have removed the old dir")
+	})
+
+	t.Run("nothing on disk yet adopts the new slug", func(t *testing.T) {
+		a := &agentState{Name: "Fresh", PendingSlug: "fresh"}
+		if got := applyPendingRename(workspace, "never-used", a); got != "fresh" {
+			t.Fatalf("pre-write rename should adopt new slug, got %q", got)
 		}
 	})
 
 	t.Run("no pending rename is a no-op", func(t *testing.T) {
-		ws := &workspaceState{SessionName: "X", SessionSlug: "x"}
-		applyPendingRename(workspace, ws)
-		if ws.SessionSlug != "x" {
-			t.Fatal("unexpected change")
+		a := &agentState{Name: "X"}
+		if got := applyPendingRename(workspace, "x", a); got != "x" {
+			t.Fatalf("unexpected change: %q", got)
 		}
 	})
 }
 
-func TestEnsureSessionDirGitignore(t *testing.T) {
+func TestMigrateLegacyLayout(t *testing.T) {
 	workspace := t.TempDir()
-	dir, err := ensureSessionDir(workspace, "my-session")
+	old := filepath.Join(workspace, ".custard", "sessions", "primary")
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(old, "s.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	migrateLegacyLayout(workspace)
+
+	moved := filepath.Join(sessionsDirFor(workspace, "primary"), "s.jsonl")
+	if !fileExists(moved) {
+		t.Fatal("legacy session not moved into agents layout")
+	}
+	if dirExists(filepath.Join(workspace, ".custard", "sessions")) {
+		t.Fatal("legacy sessions root should be removed once empty")
+	}
+}
+
+func TestEnsureAgentDirGitignore(t *testing.T) {
+	workspace := t.TempDir()
+	dir, err := ensureAgentDir(workspace, "primary")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !dirExists(dir) {
-		t.Fatal("session dir not created")
+	if !dirExists(dir) || filepath.Base(filepath.Dir(dir)) != "primary" {
+		t.Fatalf("sessions dir wrong: %q", dir)
 	}
 	b, err := os.ReadFile(filepath.Join(workspace, ".custard", ".gitignore"))
 	if err != nil || string(b) != "*\n!.gitignore\n" {
 		t.Fatalf(".gitignore missing/wrong: %q %v", b, err)
 	}
-	// Idempotent: a user-modified .gitignore must not be clobbered.
 	custom := "# custom\n"
 	if err := os.WriteFile(filepath.Join(workspace, ".custard", ".gitignore"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ensureSessionDir(workspace, "my-session"); err != nil {
+	if _, err := ensureAgentDir(workspace, "primary"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(filepath.Join(workspace, ".custard", ".gitignore"))
 	if string(b) != custom {
 		t.Fatal("user-modified .gitignore was overwritten")
-	}
-}
-
-// Rename while running records a deferred move; the next launch applies it.
-func TestRenameDefersDirectoryMove(t *testing.T) {
-	collector := &envelopeCollector{}
-	workspace := t.TempDir()
-	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
-	if err != nil {
-		t.Fatal(err)
-	}
-	engine.state.workspacePath = workspace
-	engine.state.app.WorkspacePath = workspace
-
-	ws := engine.state.app.ws(workspace)
-	ws.SessionName = "Old Name"
-	ws.SessionSlug = "old-name"
-
-	// Simulate the rename command path (no pi running → state-only update).
-	engine.state.sessionName = "My Session"
-	ws.SessionName = "My Session"
-	if slug := Slugify("My Session"); slug != ws.SessionSlug {
-		ws.PendingSlug = slug
-	}
-	if ws.PendingSlug != "my-session" {
-		t.Fatalf("pending slug not recorded: %+v", ws)
 	}
 }
 
@@ -178,25 +192,25 @@ func TestAdoptLegacySessionFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ws := &workspaceState{SessionName: "Primary", SessionSlug: "primary", LastSessionFile: legacy}
-	if _, err := ensureSessionDir(workspace, ws.SessionSlug); err != nil {
+	a := &agentState{Name: "Primary", LastSessionFile: legacy}
+	if _, err := ensureAgentDir(workspace, "primary"); err != nil {
 		t.Fatal(err)
 	}
-	adoptLegacySessionFile(workspace, ws)
+	adoptLegacySessionFile(workspace, "primary", a)
 
-	want := filepath.Join(sessionDirFor(workspace, "primary"), "old.jsonl")
-	if ws.LastSessionFile != want || !fileExists(want) {
-		t.Fatalf("legacy file not adopted: %q", ws.LastSessionFile)
+	want := filepath.Join(sessionsDirFor(workspace, "primary"), "old.jsonl")
+	if a.LastSessionFile != want || !fileExists(want) {
+		t.Fatalf("legacy file not adopted: %q", a.LastSessionFile)
 	}
 	if fileExists(legacy) {
 		t.Fatal("original should be moved, not copied")
 	}
 
 	// Already inside the workspace → untouched.
-	inside := filepath.Join(sessionDirFor(workspace, "primary"), "cur.jsonl")
-	ws2 := &workspaceState{SessionSlug: "primary", LastSessionFile: inside}
-	adoptLegacySessionFile(workspace, ws2)
-	if ws2.LastSessionFile != inside {
+	inside := filepath.Join(sessionsDirFor(workspace, "primary"), "cur.jsonl")
+	a2 := &agentState{LastSessionFile: inside}
+	adoptLegacySessionFile(workspace, "primary", a2)
+	if a2.LastSessionFile != inside {
 		t.Fatal("in-workspace path rewritten")
 	}
 }
