@@ -87,6 +87,21 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
             </div>
           )}
         </>
+      ) : approval.kind === 'write_content' ? (
+        <>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Render document?</div>
+            <p className="text-sm text-gray-200 leading-relaxed">
+              The agent wants to render <span className="font-mono">{approval.path}</span> into this panel. It is
+              staged outside the project tree — no project files are created or modified.
+            </p>
+          </div>
+          {approval.content && (
+            <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3">
+              <Markdown text={approval.content} />
+            </div>
+          )}
+        </>
       ) : (
         <div>
           <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Command</div>

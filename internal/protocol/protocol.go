@@ -213,8 +213,9 @@ type ToolCall struct {
 
 // Approval kinds.
 const (
-	ApprovalKindProposeEdit = "propose_edit"
-	ApprovalKindBash        = "bash"
+	ApprovalKindProposeEdit  = "propose_edit"
+	ApprovalKindBash         = "bash"
+	ApprovalKindWriteContent = "write_content"
 )
 
 type ApprovalRequest struct {
@@ -228,6 +229,9 @@ type ApprovalRequest struct {
 	Diff string `json:"diff,omitempty"` // unified diff text, rendered line-wise
 	// bash:
 	Command string `json:"command,omitempty"`
+	// write_content: full document body; promoted to the content panel
+	// only if the user approves.
+	Content string `json:"content,omitempty"`
 }
 
 type ApprovalResolvedPayload struct {

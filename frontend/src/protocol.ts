@@ -122,13 +122,14 @@ export interface ToolCall {
 
 export interface ApprovalRequest {
   id: string
-  kind: 'propose_edit' | 'bash'
+  kind: 'propose_edit' | 'bash' | 'write_content'
   title: string
   path?: string
   what?: string
   why?: string
   diff?: string
   command?: string
+  content?: string // write_content: full document body
 }
 
 export interface ContentDoc {

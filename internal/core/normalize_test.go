@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -76,4 +77,72 @@ func TestEndStreamDropsEmptyText(t *testing.T) {
 	if msg.ID == "" || len(s.messages) != 1 || s.messages[0].Text != "hi" {
 		t.Fatalf("real message lost: %+v / %+v", msg, s.messages)
 	}
+}
+
+// write_content renders are approval-gated: the document reaches the
+// content panel only when the user approves.
+func TestWriteContentApprovalGate(t *testing.T) {
+	newEngineWithRequest := func(t *testing.T) (*Engine, *envelopeCollector) {
+		collector := &envelopeCollector{}
+		engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		go engine.Run(ctx)
+		feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"r1","method":"confirm","title":"custard://write_content","message":"{\"toolCallId\":\"tc1\",\"path\":\"report.md\",\"content\":\"# Hello\\n\\nbody\"}"}`)
+		return engine, collector
+	}
+
+	t.Run("approve promotes to panel", func(t *testing.T) {
+		engine, collector := newEngineWithRequest(t)
+
+		if len(engine.state.approvals) != 1 {
+			t.Fatalf("expected 1 pending approval, got %d", len(engine.state.approvals))
+		}
+		ap := engine.state.approvals[0]
+		if ap.Kind != protocol.ApprovalKindWriteContent || ap.Content != "# Hello\n\nbody" {
+			t.Fatalf("bad approval: %+v", ap)
+		}
+		if engine.state.content != nil {
+			t.Fatal("content promoted before approval")
+		}
+		if _, _, ok := collector.find(t, func(envType, name string, _ json.RawMessage) bool {
+			return envType == "event" && name == protocol.EvApprovalRequested
+		}); !ok {
+			t.Fatal("no approval.requested event")
+		}
+
+		resp := sendCommand(t, engine, protocol.CmdApprovalRespond, map[string]any{"approvalId": ap.ID, "decision": "allow"})
+		if !resp.OK {
+			t.Fatalf("approval.respond: %+v", resp.Error)
+		}
+		if engine.state.content == nil || engine.state.content.Content != "# Hello\n\nbody" {
+			t.Fatalf("content not promoted on approval: %+v", engine.state.content)
+		}
+		if _, _, ok := collector.find(t, func(envType, name string, _ json.RawMessage) bool {
+			return envType == "event" && name == protocol.EvContentUpdated
+		}); !ok {
+			t.Fatal("no content.updated event after approval")
+		}
+	})
+
+	t.Run("dismiss never promotes", func(t *testing.T) {
+		engine, collector := newEngineWithRequest(t)
+		ap := engine.state.approvals[0]
+
+		resp := sendCommand(t, engine, protocol.CmdApprovalRespond, map[string]any{"approvalId": ap.ID, "decision": "dismiss"})
+		if !resp.OK {
+			t.Fatalf("approval.respond: %+v", resp.Error)
+		}
+		if engine.state.content != nil {
+			t.Fatal("content promoted despite dismissal")
+		}
+		if _, _, ok := collector.find(t, func(envType, name string, _ json.RawMessage) bool {
+			return envType == "event" && name == protocol.EvContentUpdated
+		}); ok {
+			t.Fatal("content.updated emitted for dismissed render")
+		}
+	})
 }

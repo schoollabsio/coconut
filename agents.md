@@ -1,13 +1,10 @@
 # AGENTS.md — Custard: A human-in-the-loop coding agent
 
-Custard is a desktop coding-agent app. An AI agent (`pi`) runs in a
-sidecar; a Go backend owns domain state and the approval model; a React
-UI renders tool log | chat | content panel and routes all edits through
-propose_edit (the only file-modification channel).
+Custard is a desktop coding-agent app: chat with an agent that works in a
+folder you choose, watch its tool calls live, and approve every file edit
+before it lands. Agent output documents render into a fenced content panel.
 
-Read `PLAN.md` (the full technical spec) and `README.md` first.
-
-## Architecture at a glance
+Architecture:
 
 ```
 ┌──────────────┐   JSONL RPC   ┌───────────────┐   Wails IPC   ┌──────────────┐
@@ -17,56 +14,32 @@ Read `PLAN.md` (the full technical spec) and `README.md` first.
 └──────────────┘               └───────────────┘               └──────────────┘
 ```
 
-- **Go backend** (`internal/core`, `internal/piadapter`, `internal/protocol`) owns truth.
-- **React frontend** (`frontend/`) owns only UI state, derived from backend events.
-- **pi-extension/custard.ts** bridges pi's approval protocol to Custard.
-- **cmd/fakepi** is a scripted stand-in for `pi --mode rpc` (tests + token-free dev).
+- **pi sidecar** — the real `pi` agent in `--mode rpc`, launched with an
+  isolated config dir and the custard extension (`pi-extension/custard.ts`),
+  which registers `propose_edit` / `write_content` tools and gates bash
+  commands behind approvals (with a whitelist).
+- **Go backend** (`internal/core`, `internal/piadapter`, `internal/protocol`) —
+  owns domain state, normalizes pi events, sequences everything with a global
+  `seq`, serves snapshots, and bridges approvals. Single-writer actor.
+- **React frontend** (`frontend/`) — event-driven UI: tool log | chat |
+  content panel, resizable/collapsible, settings modal.
 
-## Layout
+Read `PLAN.md` (the full technical spec) and `README.md` first.
 
-```
-.
-├── app.go, main.go            # Wails app bindings (Command / RequestSnapshot / emit)
-├── PLAN.md                    # Technical specification (read this)
-├── frontend/                  # React + TypeScript + Vite + Tailwind
-│   ├── src/
-│   │   ├── backend.ts         # BackendClient: Wails ↔ protocol bridge
-│   │   ├── protocol.ts        # Mirror of internal/protocol (keep in sync)
-│   │   ├── store.ts           # UIStore (single client-side state store)
-│   │   ├── App.tsx            # Orchestrator: connect → snapshot → live events
-│   │   ├── components/        # Chat, ToolLog, ContentPanel, Header, SettingsModal
-│   │   └── index.css          # Tailwind import
-│   └── dist/                  # Embedded via go:embed (built by `bun run build`)
-├── internal/
-│   ├── core/                  # Engine, domain state, normalizer, commands, settings, diff
-│   ├── piadapter/             # JSONL RPC client + sidecar process lifecycle
-│   └── protocol/              # Envelope types shared Go ↔ frontend
-├── pi-extension/
-│   └── custard.ts             # Registered pi extension: approve-gated tools
-├── cmd/fakepi/                # Scripted pi stand-in for testing/dev
-├── testdata/scenarios/        # .json scenario files for fakepi
-└── scripts/                   # Packaging (macOS codesign, etc.)
-```
+---
 
 ## Key design principles
 
 ### 1. Approval-gated editing
-The only file-modification channel is `propose_edit` (a pi tool registered
-by `pi-extension/custard.ts`). Built-in `edit`/`write` tools are NOT
-available. `write_content` writes documents to a file and promotes that
-path into the content panel — it is NOT for editing source files.
-
-When proposing edits, each `oldText` must match the file's current content
-exactly; edits apply sequentially. A single edit with empty `oldText`
-creates/overwrites a file. Check the tool result after proposing — never
-assume approval. If dismissed, do NOT retry the same edit.
+The **only** file-modification channel is `propose_edit` (a pi tool
+registered by `pi-extension/custard.ts`). Built-in `edit`/`write` tools are
+NOT available. When proposing edits, each `oldText` must match the file's
+current content exactly; edits apply sequentially.
 
 ### 2. Go owns domain truth
 The Go backend is a **single-writer actor** (`core.Engine.Run`). All domain
-mutation happens on one goroutine (`internal/core/engine.go`). Frontend
-commands are queued via `inbox`; pi events arrive via `inbox`; everything
-is processed sequentially. The frontend derives UI state from backend
-events/snapshots only.
+mutation happens on one goroutine. Frontend commands are queued via `inbox`;
+pi events arrive via `inbox`; everything is processed sequentially.
 
 ### 3. Global sequencing
 Every backend event carries a monotonically increasing `seq`. The frontend
@@ -75,18 +48,73 @@ Stream messages (token deltas) are unsequenced but coalesced (latest-wins
 per stream, flushed ~12ms and on every sequenced event).
 
 ### 4. Stream payloads are cumulative
-`agent.token` carries the cumulative text of the in-flight assistant
-message (not deltas). This is documented in `protocol.go`'s package doc.
-Transport is local, so bandwidth is irrelevant; cumulative payloads are
-self-healing if a stream message is dropped.
+`agent.token` carries the cumulative text of the in-flight assistant message
+(not deltas). `agent.tool.output` carries cumulative partial output. This
+makes dropped messages self-healing.
 
 ### 5. No direct pi ↔ frontend access
 The frontend talks only to Go. Go owns the pi process lifecycle and never
 exposes pi events raw.
 
-## Common workflows
+---
+
+## Layout
+
+```
+.
+├── app.go, main.go            # Wails app bindings (Command / RequestSnapshot / emit)
+├── PLAN.md                    # Technical specification (read this)
+├── AGENTS.md                  # This file
+├── README.md                  # Project overview + dev/packaging instructions
+├── frontend/                  # React + TypeScript + Vite + Tailwind
+│   ├── src/
+│   │   ├── backend.ts         # BackendClient: Wails ↔ protocol bridge
+│   │   ├── protocol.ts        # Mirror of internal/protocol (keep in sync)
+│   │   ├── store.ts           # UIStore (single client-side state store)
+│   │   ├── store.test.ts      # Vitest tests for the store
+│   │   ├── App.tsx            # Orchestrator: connect → snapshot → live events
+│   │   ├── components/        # Chat, ToolLog, ContentPanel, Header, SettingsModal
+│   │   └── index.css          # Tailwind import
+│   └── dist/                  # Embedded via go:embed (built by `bun run build`)
+├── internal/
+│   ├── core/                  # Engine, domain state, normalizer, commands, settings, diff
+│   │   ├── engine.go          # Actor loop, emission, stream coalescing
+│   │   ├── commands.go        # Command routing (frontend → backend)
+│   │   ├── normalize.go       # pi event normalization (pi → domain)
+│   │   ├── state.go           # domainState (actor-owned, no locks)
+│   │   ├── sidecar.go         # Sidecar lifecycle, launch spec, session restore
+│   │   ├── settings.go        # settings.yaml parsing, validation, models.json generation
+│   │   ├── diff.go            # applyEdits, buildUnifiedDiff
+│   │   └── *_test.go          # Integration tests against fakepi
+│   ├── piadapter/
+│   │   └── piadapter.go        # JSONL RPC client + sidecar process lifecycle
+│   └── protocol/
+│       └── protocol.go         # Envelope types shared Go ↔ frontend
+├── pi-extension/
+│   └── custard.ts              # Registered pi extension: approve-gated tools
+├── cmd/fakepi/                 # Scripted pi stand-in for testing/dev
+│   ├── main.go                 # CLI entry
+│   ├── scenario.go             # Scenario step execution
+│   ├── state.go                # Fakepi internal state
+│   └── README.md               # Detailed wiring contract docs
+├── testdata/scenarios/         # .json scenario files for fakepi
+├── scripts/                    # Packaging (macOS codesign, etc.)
+├── go.mod
+├── wails.json
+└── .gitignore
+```
+
+---
+
+## Development
+
+Requires Go ≥ 1.24 (go.mod says go 1.26), Node ≥ 20, and the wails CLI:
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+```
 
 ### Dev against the fake sidecar (token-free)
+
 ```bash
 go build -o build/bin/fakepi ./cmd/fakepi
 export CUSTARD_PI_BINARY="$PWD/build/bin/fakepi"
@@ -95,12 +123,17 @@ wails dev
 ```
 
 ### Dev against the real pi
+
 ```bash
 unset CUSTARD_PI_BINARY CUSTARD_PI_SCENARIO
 wails dev
 ```
 The app uses an isolated config dir; enter an API key once in the Settings
-modal. CUSTARD_CONFIG_DIR overrides the config location.
+modal. `CUSTARD_CONFIG_DIR` overrides the config location.
+
+---
+
+## Common workflows
 
 ### Add a new tool / approval kind
 1. Register the tool in `pi-extension/custard.ts` with a
@@ -128,15 +161,16 @@ modal. CUSTARD_CONFIG_DIR overrides the config location.
    `Ev.Xxx = "xxx"` in `frontend/src/protocol.ts`.
 2. Emit it in `internal/core/normalize.go` via `e.emitEvent(...)`.
 3. Handle it in `frontend/src/store.ts` within `applyEvent`'s switch.
-   The store does NOT handle unknown events (safe to ignore v1 events
-   your component doesn't need).
+   The store does NOT handle unknown events (safe to ignore v1 events your
+   component doesn't need).
 
 ### Add a backend stream
 1. Add `StreamXxx = "xxx"` in `internal/protocol/protocol.go` AND
    `Stream.Xxx = "xxx"` in `frontend/src/protocol.ts`.
-2. Emit via `e.emitStream(...)` in the normalizer.
-3. Handle in `frontend/src/store.ts` within `applyStream`. Note: streams
-   are buffered and flushed on `requestAnimationFrame`; for high-frequency
+2. The stream payload should be cumulative (latest-wins per item).
+3. Emit via `e.emitStream(...)`.
+4. Handle in `frontend/src/store.ts` within `applyStream`. Streams are
+   buffered and flushed via `requestAnimationFrame`; for high-frequency
    updates this is fine.
 
 ### Edit the diff preview for a file approval
@@ -147,51 +181,7 @@ a `@@ proposed changes @@` hunk header, 3 lines of context, and `…`
 elisions for collapsed context. The frontend (`DiffView` in
 `ContentPanel.tsx`) renders by prefix: ` `, `-`, `+`, `@`, `…`.
 
-## Testing
-
-```bash
-go test ./...                      # Go unit + fakepi integration
-cd frontend && npx vitest run      # UI store tests
-```
-
-- Go tests live alongside their code (`*_test.go`).
-- `internal/core/engine_test.go` exercises command handling and event
-  normalization using fakepi.
-- Frontend store tests go in `frontend/src/` with Vitest.
-- `testdata/scenarios/*.json` drive fakepi for integration scenarios.
-
-To write a fakepi scenario, see `cmd/fakepi/README.md` — the approval
-wire contract is: pi emits `tool_execution_start` → `extension_ui_request`
-(title `custard://propose_edit` / `custard://bash`, message is a JSON
-**string**) → client answers `extension_ui_response` (`confirmed: true` or
-`cancelled: true`) → pi emits `tool_execution_end`.
-
-## Settings
-
-`settings.yaml` lives in the app config dir (override with
-`CUSTARD_CONFIG_DIR`). It is user-edited YAML; the backend owns parsing
-and validation (`internal/core/settings.go`).
-
-```yaml
-provider: anthropic          # built-in (anthropic, openai, google, ...) or custom name
-model: claude-sonnet-4-5     # optional: id, provider/model, or provider/model:thinking
-apiKey: ""                   # plaintext here (0600); or read provider's env var
-providers:                   # custom endpoints / built-in overrides → pi's models.json
-  openrouter:
-    baseUrl: https://openrouter.ai/api/v1
-    api: openai-completions
-    apiKey: sk-or-...
-    models:
-      - id: anthropic/claude-sonnet-4
-bashWhitelist:               # prefixes the agent may run without approval
-  - ls
-  - git status
-  - ...
-```
-
-Saving settings restarts the sidecar. Errors block saving (the modal
-stays open); warnings are informational. Unknown provider keys pass
-through to `models.json` as warnings.
+---
 
 ## Protocol conventions (read `internal/protocol/protocol.go`)
 
@@ -202,23 +192,203 @@ through to `models.json` as warnings.
 
 All messages share the base envelope: `{type, id?, payload, correlationId?, error?}`.
 
+### Commands (frontend → backend)
+| Command | Payload | Description |
+|---|---|---|
+| `session.restore` | `{}` | Restore last session on startup |
+| `session.rename` | `{name}` | Rename the current session |
+| `workspace.pick` | `{}` | Open native directory picker |
+| `workspace.set` | `{path}` | Set the workspace folder (restarts sidecar) |
+| `agent.start` | `{prompt}` | Start an agent run |
+| `agent.cancel` | `{}` | Cancel current agent run |
+| `agent.approval.respond` | `{approvalId, decision}` | Respond to an approval |
+| `settings.get` | `{}` | Get current settings.yaml text |
+| `settings.validate` | `{yaml}` | Dry-run validate YAML |
+| `settings.save` | `{yaml}` | Validate + persist + restart sidecar |
+
+### Events (backend → frontend)
+| Event | Stream? | Description |
+|---|---|---|
+| `session.restored` | No | Session restored |
+| `workspace.changed` | No | Workspace path changed |
+| `agent.started` | No | Agent session started |
+| `agent.status.changed` | No | Agent status (idle/thinking/streaming/awaiting_approval/error) |
+| `agent.message.appended` | No | New message in conversation |
+| `agent.tool.started` | No | Tool call began |
+| `agent.tool.completed` | No | Tool call finished |
+| `agent.approval.requested` | No | Approval requested (surfaced as UI) |
+| `agent.approval.resolved` | No | Approval resolved |
+| `agent.completed` | No | Agent run finished |
+| `agent.failed` | No | Agent run failed |
+| `agent.sidecar.lost` | No | Sidecar process exited unexpectedly |
+| `content.updated` | No | write_content document promoted to content panel |
+| `settings.changed` | No | Settings updated |
+| `notification.created` | No | Show a notification |
+
+### Streams
+| Stream | Payload | Notes |
+|---|---|---|
+| `agent.token` | `{messageId, text}` | Cumulative text of in-flight assistant message |
+| `agent.tool.output` | `{toolCallId, text}` | Cumulative partial tool output |
+
+### Approval kinds
+| Kind | Fields |
+|---|---|
+| `propose_edit` | `path`, `what`, `why`, `diff` |
+| `bash` | `command` |
+
+### Approval decisions
+`allow` (approve) or `dismiss` (skip — the agent is told in chat, not retried automatically).
+
+---
+
+## Backend architecture
+
+### Engine (`internal/core/engine.go`) — single-writer actor
+All state mutation on one goroutine via `inbox` channel. Public methods
+(`HandleCommand`, `RequestSnapshot`, `Shutdown`) send to `inbox`; they're
+safe from any goroutine.
+
+Key methods:
+- `Run(ctx)` — the actor loop
+- `handle(in)` — dispatches `cmdInput`, `snapshotInput`, `piEventInput`,
+  `piRespInput`, `flushInput`, `shutdownInput`
+- `emitEvent(name, payload, correlationID)` — flushes pending streams first,
+  assigns next `seq`, emits via `cfg.Emit`
+- `emitStream(name, payload)` — coalesces (latest-wins per name), schedules
+  flush via `time.AfterFunc(12ms)`
+- `sendPi(name, fields, cont)` — sends a pi command, runs continuation on
+  the actor goroutine via `piRespInput`
+
+### Command routing (`internal/core/commands.go`)
+Maps `CmdXxx` → `cmdXxx` handler. Handlers respond synchronously via the
+buffered `respond` channel, or use `viaPi` for async pi-backed work.
+**Never block the actor waiting for a continuation** — that deadlocks.
+
+### Event normalization (`internal/core/normalize.go`)
+Translates raw pi events into domain mutations + backend emissions.
+`setStatus` only emits `agent.status.changed` on transitions.
+`extension_ui_request` events with `custard://` titles are bridged to
+approval requests; `notify` method events pass through as notifications.
+
+### Sidecar lifecycle (`internal/core/sidecar.go`)
+- `startSidecarLocked` — launches pi, pumps events via goroutine → `inbox`,
+  does post-start `get_state`, optionally restores session via
+  `switch_session`, rebuilds message history.
+- `stopSidecarLocked` — closes pi client + kills process.
+- `onSidecarGone` — handles unexpected exit: emits `agent.sidecar.lost` and
+  `agent.failed`, then single automatic restart with session restore.
+- `buildLaunchSpec` — assembles the pi command line; checks
+  `CUSTARD_PI_BINARY` for dev/fakepi.
+
+### Settings (`internal/core/settings.go`)
+`settings.yaml` is user-editable YAML. Backend owns parsing and validation:
+- Unknown top-level keys rejected (strict YAML).
+- Provider config (`providers:`) translated to pi's `models.json`.
+- Built-in provider API keys sent via env, not files.
+- `CUSTARD_BASH_WHITELIST` adds extra whitelist prefixes.
+- Errors block saving; warnings are informational.
+
+### Diff (`internal/core/diff.go`)
+- `applyEdits` — exact-match replacements, first-occurrence-wins, sequential.
+- `buildUnifiedDiff` — renders `--- a/file` / `+++ b/file` headers,
+  `@@ proposed changes @@` hunk, 3 lines context, `…` elisions.
+
+### Protocol (`internal/protocol/protocol.go`)
+Go types shared between backend and (manually mirrored to) frontend.
+See Protocol conventions above.
+
+### Pi adapter (`internal/piadapter/piadapter.go`)
+JSONL RPC client. Owns process lifecycle, command/response correlation
+(by `id`), and raw event stream. Deliberately knows nothing about custard's
+domain — normalization lives in `internal/core`.
+
+---
+
 ## Frontend architecture
 
-- **`backend.ts`** — `BackendClient`: `command()`, `requestSnapshot()`, `onMessage()`.
-  Wires onto Wails: `window.go.main.App.Command`, `.RequestSnapshot`, and
-  `runtime.EventsOn("backend", ...)`. A single ordered Wails event channel
-  carries every envelope, preserving backend sequence ordering end-to-end.
-- **`store.ts`** — `UIStore`: a framework-free store with a React binding via
-  `useSyncExternalStore`. It applies snapshots (full replace), events
-  (seq-gapped → resync), and buffered streams (flushed via RAF). Does NOT
-  own domain truth; derives UI state from backend messages.
-- **`App.tsx`** — bootstrapper. Connects, buffers events before the first
-  snapshot, sends `session.restore`, applies the snapshot, then drains the
-  buffer. NOTE: no "booted" ref guard — React StrictMode in dev intentionally
-  remounts effects; cleanup must fully undo setup.
-- **Components** are dumb-ish: they read state via `useUIState(selector)`
-  and send commands via `client.command(...)`. One-off subscriptions
-  (e.g. approvals) use `useEffect` + `bus.on(...)`.
+### BackendClient (`frontend/src/backend.ts`)
+Wires Wails bindings:
+- `command(name, payload)` → `window.go.main.App.Command`
+- `requestSnapshot()` → `window.go.main.App.RequestSnapshot`
+- `onMessage(handler)` → `window.runtime.EventsOn("backend", ...)`
+
+### UIStore (`frontend/src/store.ts`)
+Framework-free store with a React binding via `useSyncExternalStore`.
+- `applyBackendMessage(msg)` — dispatches to `applySnapshot`, `applyEvent`,
+  or `bufferStream`.
+- `applyEvent` — seq-gap detection → `resync()`; otherwise applies to state.
+- `bufferStream` / `applyStream` — buffers streams in a `Map`, flushes via
+  `requestAnimationFrame`, applies cumulative payloads.
+- Does NOT own domain truth; derives UI state from backend messages.
+
+### App.tsx (`frontend/src/App.tsx`)
+Bootstrapper:
+1. Connects to backend (buffers events until snapshot lands).
+2. Sends `session.restore`.
+3. Gets initial snapshot.
+4. Flushes buffered events.
+
+**No "booted" ref guard** — React StrictMode in dev intentionally remounts
+effects. Cleanup must fully undo setup; setup must be safe to run twice.
+
+### Components (`frontend/src/components/`)
+- **Header.tsx** — session name, settings button, agent status indicator.
+- **Chat.tsx** — message list with streaming text; prompt input.
+- **ToolLog.tsx** — tool call timeline (started/completed/pending_approval).
+- **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny) or
+  content doc preview (Markdown). `ApprovalView` has branches per approval kind.
+- **SettingsModal.tsx** — raw YAML editor with live validation (debounced),
+  errors block save, warnings are informational.
+- **ColumnGrid.tsx** — resizable layout for tool log | chat | content.
+- **Markdown.tsx** — react-markdown renderer for content docs.
+
+---
+
+## Testing
+
+```bash
+go test ./...                       # Go unit + fakepi integration
+cd frontend && npx vitest run       # UI store tests
+```
+
+- Go tests live alongside their code (`*_test.go`).
+- `internal/core/engine_test.go` exercises the full backend pipeline using
+  fakepi: workspace set → prompt → streaming → approval → completion →
+  snapshot verification. Also tests sequence monotonicity.
+- Frontend store tests (`frontend/src/store.test.ts`) use Vitest and verify
+  snapshot application, event ordering, seq-gap recovery, stream coalescing,
+  and approval state transitions.
+- `testdata/scenarios/*.json` drive fakepi for integration scenarios.
+
+### Writing a fakepi scenario
+See `cmd/fakepi/README.md`. The approval wire contract:
+1. pi emits `tool_execution_start` → `extension_ui_request` (title
+   `custard://propose_edit` / `custard://bash`, message is a JSON **string**)
+2. Client answers `extension_ui_response` (`confirmed: true` or
+   `cancelled: true`)
+3. pi emits `tool_execution_end`
+
+Scenario steps: `waitFor` (block on command match), `emit` (write event),
+`waitForResponse` (block on approval response), `emitIf` (conditional emit
+by response). Steps execute concurrently with command dispatch.
+
+---
+
+## Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `CUSTARD_PI_BINARY` | Override the sidecar binary path (dev/fakepi) |
+| `CUSTARD_PI_SCENARIO` | Path to a fakepi scenario JSON |
+| `CUSTARD_CONFIG_DIR` | Override the app config directory |
+| `CUSTARD_EXTENSION` | Override the pi extension path |
+| `CUSTARD_BASH_WHITELIST` | Extra comma-separated bash whitelist prefixes |
+| `PI_CODING_AGENT_DIR` | Set by backend — isolated pi config dir |
+| `PI_SKIP_VERSION_CHECK` | Set by backend |
+| `PI_TELEMETRY` | Set by backend |
+
+---
 
 ## Building and packaging
 
@@ -235,26 +405,16 @@ The packaged app bundles: the Go binary, the embedded `frontend/dist`,
 the pi sidecar (single ~70MB binary in `build/sidecar/`), and the
 custard extension (`pi-extension/custard.ts`).
 
-## Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `CUSTARD_PI_BINARY` | Override the sidecar binary path (dev/fakepi) |
-| `CUSTARD_PI_SCENARIO` | Path to a fakepi scenario JSON |
-| `CUSTARD_CONFIG_DIR` | Override the app config directory |
-| `CUSTARD_EXTENSION` | Override the pi extension path |
-| `CUSTARD_BASH_WHITELIST` | Extra comma-separated bash whitelist prefixes |
-| `PI_CODING_AGENT_DIR` | (set by backend) isolated pi config dir |
-| `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY` | (set by backend) pi behavior |
+---
 
 ## Style notes
 
-- Go: standard formatting (`gofmt`/`goimports`). Actor-only state accessed
-  without locks (`domainState` in `state.go`). Public methods that send to
-  `inbox` are safe from any goroutine.
-- TypeScript/React: Tailwind for styling. Components use `useUIState`
+- **Go**: standard formatting (`gofmt`/`goimports`). Actor-only state
+  (`domainState` in `state.go`) accessed without locks. Public methods that
+  send to `inbox` are safe from any goroutine.
+- **TypeScript/React**: Tailwind for styling. Components use `useUIState`
   selectors — never subscribe to raw backend events as state sources.
-  The `oldText` in `propose_edit` must match exactly (same invariant as
-  the extension).
-- `protocol.ts` is a **manual mirror** of `internal/protocol/protocol.go`.
+  The `protocol.ts` is a **manual mirror** of `internal/protocol/protocol.go`;
+  when you add a constant or type in one, update the other.
+- **protocol.ts** is a **manual mirror** of `internal/protocol/protocol.go`.
   When you add a constant or type in one, update the other.

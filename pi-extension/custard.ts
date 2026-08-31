@@ -20,9 +20,9 @@
  * Pieces:
  *   1. propose_edit tool — the ONLY way the agent can create/modify files
  *      (built-in edit/write are not in --tools). Gated on user approval.
- *   2. write_content tool — ungated channel for rendering markdown documents
- *      into the app's content panel. Staged OUTSIDE the workspace so it can
- *      never create/modify project files.
+ *   2. write_content tool — approval-gated channel for rendering markdown
+ *      documents into the app's content panel. Staged OUTSIDE the workspace
+ *      so it can never create/modify project files.
  *   3. tool_call hook gating `bash` behind a read-only whitelist + approval,
  *      and hard-blocking built-in edit/write/apply_patch if a pi build ever
  *      activates them despite --tools.
@@ -199,7 +199,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
   - Propose complete, well-formed edits: every \`oldText\` must match the file's current content exactly, and give each proposal a clear \`what\` and \`why\` — the user reads them when deciding.
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
-- Use \`write_content\` to render markdown documents (reports, plans, notes, summaries) into the user's content panel. It is the sanctioned channel for deliverables the user should read and is not approval-gated; documents are staged outside the project tree and CANNOT create or modify project files — use \`propose_edit\` for anything that belongs in the project.
+- Use \`write_content\` to render markdown documents (reports, plans, notes, summaries) into the user's content panel; each render is shown to the user for approval first. Approved documents are staged outside the project tree and CANNOT create or modify project files — use \`propose_edit\` for anything that belongs in the project.
 - \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
 
 // ---------------------------------------------------------------------------
@@ -338,25 +338,43 @@ export default function (pi: ExtensionAPI) {
 		name: "write_content",
 		label: "Write Content",
 		description:
-			"Render a document (usually Markdown) into the user's content panel. The document is staged OUTSIDE the project tree: this tool cannot create or modify project files (use propose_edit for those). This is the sanctioned, non-gated output channel for deliverables the user should read.",
-		promptSnippet: "Render a markdown document into the user's content panel",
+			"Render a document (usually Markdown) into the user's content panel. Every render is shown to the user for approval first. Approved documents are staged OUTSIDE the project tree: this tool cannot create or modify project files (use propose_edit for those).",
+		promptSnippet: "Render a markdown document into the user's content panel (approval-gated)",
 		promptGuidelines: [
 			"Use write_content for documents the user should read (reports, plans, notes, summaries); it does not create project files — use propose_edit for anything that belongs in the project.",
 		],
 		parameters: WriteContentParamsSchema,
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const absPath = stagingPath(params.path);
+		async execute(toolCallId, params, _signal, _onUpdate, _ctx) {
+			// Approval gate — wire contract with the Go backend. The backend
+			// shows the document in the content panel and promotes it there
+			// only on approval. No timeout: open until the user decides.
+			const approved = await ctx.ui.confirm(
+				"custard://write_content",
+				JSON.stringify({ toolCallId, path: params.path, content: params.content }),
+			);
+			if (!approved) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "The user declined to render this document. Do NOT retry the same render; the user will follow up in chat with what to change.",
+						},
+					],
+					details: { path: params.path, rendered: false },
+				};
+			}
 
+			const absPath = stagingPath(params.path);
 			await withFileMutationQueue(absPath, async () => {
 				await mkdir(dirname(absPath), { recursive: true });
 				await writeFile(absPath, params.content, "utf8");
 			});
 
-			// Keep the result tiny: the backend renders path/content from the tool
-			// call arguments, not from this result.
+			// Keep the result tiny: the backend renders path/content from the
+			// approval payload, not from this result.
 			return {
-				content: [{ type: "text", text: `content rendered to the user's panel (staged outside the project at ${absPath})` }],
-				details: { path: params.path },
+				content: [{ type: "text", text: "content rendered to the user's panel" }],
+				details: { path: params.path, rendered: true },
 			};
 		},
 	});
