@@ -94,7 +94,16 @@ func (e *Engine) cmdSessionRename(cmd protocol.Command, respond chan []byte) {
 		return
 	}
 	e.state.sessionName = p.Name
-	e.state.app.SessionName = p.Name
+	if e.state.workspacePath != "" {
+		ws := e.state.app.ws(e.state.workspacePath)
+		ws.SessionName = p.Name
+		// The physical session-dir move is deferred to next launch: pi
+		// caches the transcript's absolute path and could rewrite the old
+		// location mid-session (compaction), splitting the transcript.
+		if slug := Slugify(p.Name); slug != ws.SessionSlug {
+			ws.PendingSlug = slug
+		}
+	}
 	_ = saveState(e.cfg.ConfigDir, e.state.app)
 
 	if !e.piUp {
@@ -149,6 +158,7 @@ func (e *Engine) cmdWorkspaceSet(cmd protocol.Command, respond chan []byte) {
 	e.state.content = nil
 	e.state.workspacePath = p.Path
 	e.state.app.WorkspacePath = p.Path
+	e.state.sessionName = e.state.app.ws(p.Path).SessionName
 	_ = saveState(e.cfg.ConfigDir, e.state.app)
 	e.emitEvent(protocol.EvWorkspaceChanged, e.state.workspaceInfo(), cmd.ID)
 

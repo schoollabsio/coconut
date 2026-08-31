@@ -28,7 +28,18 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 	}
 
 	s := e.state.settings
-	spec := buildLaunchSpec(e.cfg, s, e.state.app, e.state.workspacePath)
+	ws := e.state.app.ws(e.state.workspacePath)
+	applyPendingRename(e.state.workspacePath, ws)
+	sessionDir, err := ensureSessionDir(e.state.workspacePath, ws.SessionSlug)
+	if err != nil {
+		if done != nil {
+			done(err)
+		}
+		return
+	}
+	adoptLegacySessionFile(e.state.workspacePath, ws)
+	_ = saveState(e.cfg.ConfigDir, e.state.app)
+	spec := buildLaunchSpec(e.cfg, s, ws.SessionName, e.state.workspacePath, sessionDir)
 	if err := prepareSidecarConfig(e.cfg.ConfigDir, s); err != nil {
 		if done != nil {
 			done(err)
@@ -84,8 +95,10 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 			SessionName string `json:"sessionName"`
 		}
 		_ = json.Unmarshal(resp.Data, &st)
+		ws := e.state.app.ws(e.state.workspacePath)
 		if st.SessionName != "" {
 			e.state.sessionName = st.SessionName
+			ws.SessionName = st.SessionName
 		}
 
 		finish := func() {
@@ -100,12 +113,12 @@ func (e *Engine) startSidecarLocked(restore bool, done func(error)) {
 			})
 		}
 
-		if st.SessionFile != "" && st.SessionFile != e.state.app.LastSessionFile {
-			e.state.app.LastSessionFile = st.SessionFile
+		if st.SessionFile != "" && st.SessionFile != ws.LastSessionFile {
+			ws.LastSessionFile = st.SessionFile
 			_ = saveState(e.cfg.ConfigDir, e.state.app)
 		}
 
-		last := e.state.app.LastSessionFile
+		last := ws.LastSessionFile
 		if restore && last != "" && st.SessionFile != last && fileExists(last) {
 			e.sendPi("switch_session", map[string]any{"sessionPath": last}, func(resp piadapter.Response, err error) {
 				if err != nil || !resp.Success {
@@ -180,9 +193,8 @@ func (e *Engine) onSidecarGone(err error) {
 // launch spec assembly (incl. the fakepi dev seam)
 // ---------------------------------------------------------------------------
 
-func buildLaunchSpec(cfg EngineConfig, s Settings, st appState, workspace string) piadapter.LaunchSpec {
+func buildLaunchSpec(cfg EngineConfig, s Settings, sessionName, workspace, sessionDir string) piadapter.LaunchSpec {
 	agentDir := filepath.Join(cfg.ConfigDir, "agent")
-	sessionDir := filepath.Join(cfg.ConfigDir, "sessions")
 
 	binary := os.Getenv("CUSTARD_PI_BINARY")
 	if binary == "" {
@@ -205,7 +217,7 @@ func buildLaunchSpec(cfg EngineConfig, s Settings, st appState, workspace string
 		APIKey:        sidecarAPIKey(s),
 		APIKeyEnv:     sidecarKeyEnvVars(s),
 		BashWhitelist: s.BashWhitelist,
-		SessionName:   st.SessionName,
+		SessionName:   sessionName,
 	}, workspace, agentDir, sessionDir, cfg.ExtensionPath, binary)
 }
 

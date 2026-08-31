@@ -117,11 +117,8 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		e.state.settings.EnsureBashWhitelist(strings.Split(extra, ",")...)
 	}
 	e.state.app = loadState(cfg.ConfigDir)
-	if e.state.app.SessionName == "" {
-		e.state.app.SessionName = "Untitled Session"
-	}
 	e.state.workspacePath = e.state.app.WorkspacePath
-	e.state.sessionName = e.state.app.SessionName
+	e.state.sessionName = e.state.app.ws(e.state.workspacePath).SessionName
 	return e, nil
 }
 

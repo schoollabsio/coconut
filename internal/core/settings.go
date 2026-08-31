@@ -384,12 +384,48 @@ func (s *Settings) EnsureBashWhitelist(prefixes ...string) {
 // state.json — app-owned bookkeeping (not user-editable)
 // ---------------------------------------------------------------------------
 
-// appState is persisted app bookkeeping: the last workspace, the session
-// display name, and pi's session file (for restart restore).
+// appState is persisted app bookkeeping: the last workspace plus, per
+// workspace, the session display name, its on-disk slug, a deferred rename
+// target, and pi's session file (for restart restore).
 type appState struct {
-	WorkspacePath   string `json:"workspacePath"`
-	SessionName     string `json:"sessionName"`
+	WorkspacePath string                     `json:"workspacePath"`
+	Workspaces    map[string]*workspaceState `json:"workspaces,omitempty"`
+
+	// Legacy flat fields (pre per-workspace tracking). Migrated into
+	// Workspaces on load; never written back out.
+	SessionName     string `json:"sessionName,omitempty"`
 	LastSessionFile string `json:"lastSessionFile,omitempty"`
+}
+
+// workspaceState tracks one workspace's session pointer.
+type workspaceState struct {
+	SessionName     string `json:"sessionName"`
+	SessionSlug     string `json:"sessionSlug"`
+	PendingSlug     string `json:"pendingSlug,omitempty"`     // deferred rename, applied at next launch
+	LastSessionFile string `json:"lastSessionFile,omitempty"` // pi session transcript to restore
+}
+
+// ws returns the state entry for a workspace, creating a defaulted entry on
+// first use. Returns a throwaway entry for an empty path.
+func (a *appState) ws(path string) *workspaceState {
+	if path == "" {
+		return &workspaceState{SessionName: "Untitled Session", SessionSlug: "untitled-session"}
+	}
+	if a.Workspaces == nil {
+		a.Workspaces = map[string]*workspaceState{}
+	}
+	w := a.Workspaces[path]
+	if w == nil {
+		w = &workspaceState{}
+		a.Workspaces[path] = w
+	}
+	if w.SessionName == "" {
+		w.SessionName = "Untitled Session"
+	}
+	if w.SessionSlug == "" {
+		w.SessionSlug = Slugify(w.SessionName)
+	}
+	return w
 }
 
 func statePath(configDir string) string { return filepath.Join(configDir, "state.json") }
@@ -401,6 +437,22 @@ func loadState(configDir string) appState {
 		return st
 	}
 	_ = json.Unmarshal(b, &st)
+	// Migrate the legacy flat shape into the per-workspace map.
+	if st.WorkspacePath != "" && (st.SessionName != "" || st.LastSessionFile != "") {
+		name := st.SessionName
+		if name == "" {
+			name = "Untitled Session"
+		}
+		st.Workspaces = map[string]*workspaceState{
+			st.WorkspacePath: {
+				SessionName:     name,
+				SessionSlug:     Slugify(name),
+				LastSessionFile: st.LastSessionFile,
+			},
+		}
+	}
+	st.SessionName = ""
+	st.LastSessionFile = ""
 	return st
 }
 

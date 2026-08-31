@@ -281,6 +281,18 @@ approval requests; `notify` method events pass through as notifications.
 - `buildLaunchSpec` — assembles the pi command line; checks
   `CUSTARD_PI_BINARY` for dev/fakepi.
 
+### Session storage (`internal/core/slug.go`)
+Sessions live IN the workspace: `<workspace>/.custard/sessions/<slug>/
+<timestamp>_<uuid>.jsonl`, where `<slug>` is the slugified session name from
+the header (`My Session` → `my-session`). `state.json` tracks sessions
+per-workspace (`workspaces[path] = {sessionName, sessionSlug, pendingSlug,
+lastSessionFile}`). Renames update the live session via `set_session_name`
+immediately; the directory move is deferred to the next sidecar launch
+(`pendingSlug`, applied by `applyPendingRename`) because pi caches the
+transcript's absolute path. Legacy transcripts outside the workspace are
+adopted (moved in) at launch. `.custard/.gitignore` (`*`) keeps transcripts
+out of accidental commits.
+
 ### Settings (`internal/core/settings.go`)
 `settings.yaml` is user-editable YAML. Backend owns parsing and validation:
 - Unknown top-level keys rejected (strict YAML).
