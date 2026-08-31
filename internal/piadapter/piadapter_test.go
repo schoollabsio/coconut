@@ -247,7 +247,7 @@ func TestLaunchSpecArgs(t *testing.T) {
 	joined := strings.Join(spec.Args, " ")
 	for _, want := range []string{
 		"--mode rpc", "--no-extensions", "-e /ext/custard.ts",
-		"--tools read,bash,grep,find,ls,propose_edit,write_content",
+		"--tools read,bash,grep,find,ls,propose_edit,show_content",
 		"--provider anthropic", "--model sonnet",
 		"--session-dir /cfg/sessions", "--name demo",
 	} {

@@ -39,7 +39,7 @@ type toolStartInfo struct {
 	ToolName string
 	Path     string
 	Command  string
-	Content  string // write_content payload
+	Content  string // show_content payload
 	Args     map[string]any
 }
 

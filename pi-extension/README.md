@@ -14,7 +14,7 @@ the host pi installation).
 PI_CODING_AGENT_DIR=<custard's isolated agent dir> \
 pi --mode rpc --no-extensions \
    -e pi-extension/custard.ts \
-   --tools read,bash,grep,find,ls,propose_edit,write_content
+   --tools read,bash,grep,find,ls,propose_edit,show_content
 ```
 
 - `--mode rpc`: the Go backend drives pi over JSONL on stdin/stdout.
@@ -51,13 +51,13 @@ The whole read → confirm → apply → write window runs inside pi's
 `withFileMutationQueue` so parallel tool calls cannot interleave writes to the
 same file.
 
-### 2. `write_content` tool (content panel channel)
+### 2. `show_content` tool (content panel channel)
 
-Parameters: `path`, `content`. Writes the file relative to the working
-directory (creating directories). **Not** approval-gated — this is the
-sanctioned channel for rendering markdown deliverables (reports, plans, notes)
-into the app's fenced content panel. The tool result is intentionally tiny
-(`content written to <path>`): the backend renders the document from the tool
+Parameters: `path`, `content`. Displays a document in the app's fenced
+content panel. **Not** approval-gated — it only displays; the staged copy
+lives in `$PI_CODING_AGENT_DIR/content/`, outside the project tree, so it
+can never create or modify project files. The tool result is intentionally
+tiny: the backend renders the document from the tool
 call *arguments* (`path`/`content` on `tool_execution_start`), not from the
 result.
 
@@ -94,7 +94,7 @@ Appends a concise **Custard environment** section to the system prompt on
 every run: file modifications MUST go through `propose_edit` (built-in
 edit/write don't exist), `propose_edit` blocks on user approval so the agent
 should gather context with read/grep first, propose complete well-formed edits
-with clear `what`/`why`, never assume approval, use `write_content` for
+with clear `what`/`why`, never assume approval, use `show_content` for
 deliverables the user should read, and stop (rather than retry) after a
 dismissed proposal.
 

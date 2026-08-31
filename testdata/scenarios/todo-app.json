@@ -411,7 +411,7 @@
       "emit": {
         "type": "tool_execution_start",
         "toolCallId": "call_4",
-        "toolName": "write_content",
+        "toolName": "show_content",
         "args": {
           "path": "content.md",
           "content": "# Todo App\n\n- [x] Fix delete handler\n- [ ] Mark todos complete\n"
@@ -423,7 +423,7 @@
       "emit": {
         "type": "tool_execution_end",
         "toolCallId": "call_4",
-        "toolName": "write_content",
+        "toolName": "show_content",
         "result": {
           "content": [
             {

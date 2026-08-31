@@ -52,7 +52,7 @@ func ResolveBinary(selfPath string) string {
 // BuildLaunchSpec assembles the sidecar invocation:
 //
 //	pi --mode rpc --no-extensions -e <extension> \
-//	   --tools read,bash,grep,find,ls,propose_edit,write_content \
+//	   --tools read,bash,grep,find,ls,propose_edit,show_content \
 //	   [--provider P --model M] --session-dir <dir> [--name N]
 //
 // env: PI_CODING_AGENT_DIR (isolated config), provider API key,
@@ -62,7 +62,7 @@ func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensi
 		"--mode", "rpc",
 		"--no-extensions",
 		"-e", extensionPath,
-		"--tools", "read,bash,grep,find,ls,propose_edit,write_content",
+		"--tools", "read,bash,grep,find,ls,propose_edit,show_content",
 		"--session-dir", sessionDir,
 	}
 	if s.Provider != "" {

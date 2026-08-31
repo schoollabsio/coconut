@@ -6,7 +6,7 @@ import { Markdown } from './Markdown'
 /**
  * Right panel: the fenced content area. Three modes:
  *  - approval: a focused pending approval renders What/Why/Diff + Approve
- *  - preview:  the agent's latest write_content document
+ *  - preview:  the agent's latest show_content document
  *  - empty:    placeholder
  */
 export function ContentPanel({ client }: { client: BackendClient }) {
@@ -84,21 +84,6 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
             <div>
               <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Diff</div>
               <DiffView diff={approval.diff} />
-            </div>
-          )}
-        </>
-      ) : approval.kind === 'write_content' ? (
-        <>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Render document?</div>
-            <p className="text-sm text-gray-200 leading-relaxed">
-              The agent wants to render <span className="font-mono">{approval.path}</span> into this panel. It is
-              staged outside the project tree — no project files are created or modified.
-            </p>
-          </div>
-          {approval.content && (
-            <div className="rounded-lg border border-gray-800 bg-gray-900/50 p-3">
-              <Markdown text={approval.content} />
             </div>
           )}
         </>

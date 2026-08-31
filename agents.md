@@ -16,7 +16,7 @@ Architecture:
 
 - **pi sidecar** — the real `pi` agent in `--mode rpc`, launched with an
   isolated config dir and the custard extension (`pi-extension/custard.ts`),
-  which registers `propose_edit` / `write_content` tools and gates bash
+  which registers `propose_edit` / `show_content` tools and gates bash
   commands behind approvals (with a whitelist).
 - **Go backend** (`internal/core`, `internal/piadapter`, `internal/protocol`) —
   owns domain state, normalizes pi events, sequences everything with a global
@@ -221,7 +221,7 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 | `agent.completed` | No | Agent run finished |
 | `agent.failed` | No | Agent run failed |
 | `agent.sidecar.lost` | No | Sidecar process exited unexpectedly |
-| `content.updated` | No | write_content document promoted to content panel |
+| `content.updated` | No | show_content document promoted to content panel |
 | `settings.changed` | No | Settings updated |
 | `notification.created` | No | Show a notification |
 

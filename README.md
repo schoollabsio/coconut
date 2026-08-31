@@ -16,7 +16,7 @@ Architecture (see PLAN.md for the full spec):
 
 - **pi sidecar** — the real `pi` agent in `--mode rpc`, launched with an
   isolated config dir and our extension (`pi-extension/custard.ts`), which
-  registers the `propose_edit` / `write_content` tools and gates bash
+  registers the `propose_edit` / `show_content` tools and gates bash
   commands behind approvals (with a whitelist).
 - **Go backend** (`internal/core`, `internal/piadapter`) — owns domain
   state, normalizes pi events, sequences everything with a global `seq`,

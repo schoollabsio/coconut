@@ -103,4 +103,4 @@ approval via pi's extension UI sub-protocol:
    approve, or a non-error result with text `"user declined"` on
    dismiss.
 
-`write_content` (and `read`) complete without approval.
+`show_content` (and `read`) complete without approval.

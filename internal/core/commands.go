@@ -237,12 +237,6 @@ func (e *Engine) cmdApprovalRespond(cmd protocol.Command, respond chan []byte) {
 			break
 		}
 	}
-	// Approved renders land in the content panel now (and only now).
-	if p.Decision == protocol.DecisionAllow && pend.request.Kind == protocol.ApprovalKindWriteContent {
-		doc := &protocol.ContentDoc{Path: pend.request.Path, Content: pend.request.Content, UpdatedAt: nowMs()}
-		e.state.content = doc
-		e.emitEvent(protocol.EvContentUpdated, doc, cmd.ID)
-	}
 	if pend.toolCall != "" {
 		if call := e.state.findToolCall(pend.toolCall); call != nil && call.Status == protocol.ToolPendingApproval {
 			call.Status = protocol.ToolRunning

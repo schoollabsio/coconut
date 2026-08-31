@@ -155,8 +155,17 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 			"status":     status,
 		}, "")
 
-		// write_content promotion happens in cmdApprovalRespond when (and only
-	// when) the user approves the render; nothing to do at tool end.
+		// show_content is the fenced content channel: promote its
+		// args (captured at start) into the content doc. Ungated — the
+		// staged copy lives outside the workspace and nothing in the
+		// project is mutated.
+		if m.ToolName == "show_content" && !m.IsError {
+			if info, ok := e.state.toolArgs[m.ToolCallID]; ok && info.Path != "" {
+				doc := &protocol.ContentDoc{Path: info.Path, Content: info.Content, UpdatedAt: nowMs()}
+				e.state.content = doc
+				e.emitEvent(protocol.EvContentUpdated, doc, "")
+			}
+		}
 
 	case "extension_ui_request":
 		e.handleExtensionUIRequest(ev.Raw)
@@ -224,15 +233,15 @@ func (e *Engine) setStatus(status, correlationID string) {
 // toolLabel builds the tool-log display line ("Read App.tsx" style).
 func toolLabel(tool string, info toolStartInfo) string {
 	name := map[string]string{
-		"read":          "Read",
-		"bash":          "Run",
-		"edit":          "Edit",
-		"write":         "Write",
-		"grep":          "Grep",
-		"find":          "Find",
-		"ls":            "List",
-		"propose_edit":  "Edit",
-		"write_content": "Render",
+		"read":         "Read",
+		"bash":         "Run",
+		"edit":         "Edit",
+		"write":        "Write",
+		"grep":         "Grep",
+		"find":         "Find",
+		"ls":           "List",
+		"propose_edit": "Edit",
+		"show_content": "Show",
 	}[tool]
 	if name == "" {
 		name = tool
@@ -290,8 +299,6 @@ func (e *Engine) handleExtensionUIRequest(raw json.RawMessage) {
 		e.bridgeProposeEdit(req)
 	case "custard://bash":
 		e.bridgeBashApproval(req)
-	case "custard://write_content":
-		e.bridgeWriteContent(req)
 	default:
 		// Not ours (shouldn't happen with --no-extensions): dismiss
 		// dialogs so nothing hangs; ignore fire-and-forget methods.
@@ -364,34 +371,6 @@ func (e *Engine) bridgeBashApproval(req extUIRequest) {
 		Kind:    protocol.ApprovalKindBash,
 		Title:   "Run shell command?",
 		Command: payload.Command,
-	}
-	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
-}
-
-// bridgeWriteContent gates the render-to-panel channel: the document is
-// shown as a pending approval and promoted to the content panel only on
-// approval (cmdApprovalRespond).
-func (e *Engine) bridgeWriteContent(req extUIRequest) {
-	var payload struct {
-		ToolCallID string `json:"toolCallId"`
-		Path       string `json:"path"`
-		Content    string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(req.Message), &payload); err != nil {
-		e.sendPiRaw(map[string]any{"type": "extension_ui_response", "id": req.ID, "cancelled": true})
-		e.notify("error", "malformed write_content approval request")
-		return
-	}
-	e.state.toolCounter++
-	approval := protocol.ApprovalRequest{
-		ID:      "ap-" + itoa(e.state.toolCounter),
-		Kind:    protocol.ApprovalKindWriteContent,
-		Title:   "Render " + filepath.Base(payload.Path) + " to panel?",
-		Path:    payload.Path,
-		What:    "The agent wants to render this document into your content panel.",
-		Why:     "Rendered documents are staged outside the project tree; this does not create or modify project files.",
-		Diff:    buildUnifiedDiff(payload.Path, "", payload.Content),
-		Content: payload.Content,
 	}
 	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
 }

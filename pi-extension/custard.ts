@@ -5,7 +5,7 @@
  * Custard runs the real `pi` coding agent as an RPC sidecar:
  *
  *   pi --mode rpc --no-extensions -e custard.ts \
- *      --tools read,bash,grep,find,ls,propose_edit,write_content
+ *      --tools read,bash,grep,find,ls,propose_edit,show_content
  *
  * The Go backend renders its own UI and talks to pi over JSONL RPC, so ALL
  * user interaction here goes through the RPC-bridged extension-UI protocol
@@ -20,7 +20,7 @@
  * Pieces:
  *   1. propose_edit tool — the ONLY way the agent can create/modify files
  *      (built-in edit/write are not in --tools). Gated on user approval.
- *   2. write_content tool — approval-gated channel for rendering markdown
+ *   2. show_content tool — ungated display channel for rendering markdown
  *      documents into the app's content panel. Staged OUTSIDE the workspace
  *      so it can never create/modify project files.
  *   3. tool_call hook gating `bash` behind a read-only whitelist + approval,
@@ -60,11 +60,11 @@ const ProposeEditParamsSchema = Type.Object({
 });
 export type ProposeEditParams = Static<typeof ProposeEditParamsSchema>;
 
-const WriteContentParamsSchema = Type.Object({
+const ShowContentParamsSchema = Type.Object({
 	path: Type.String({ description: 'Document file name, e.g. "report.md" (staged outside the project tree).' }),
 	content: Type.String({ description: "Full document content (usually Markdown)." }),
 });
-export type WriteContentParams = Static<typeof WriteContentParamsSchema>;
+export type ShowContentParams = Static<typeof ShowContentParamsSchema>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,7 +103,7 @@ function preview(s: string, max = 80): string {
 	return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
 }
 
-// write_content stages documents here — inside pi's agent dir, which custard
+// show_content stages documents here — inside pi's agent dir, which custard
 // sets to its own isolated config dir — so the ungated render channel can
 // never write into the user's project.
 const CONTENT_STAGING = join(process.env.PI_CODING_AGENT_DIR ?? tmpdir(), "content");
@@ -199,7 +199,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
   - Propose complete, well-formed edits: every \`oldText\` must match the file's current content exactly, and give each proposal a clear \`what\` and \`why\` — the user reads them when deciding.
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
-- Use \`write_content\` to render markdown documents (reports, plans, notes, summaries) into the user's content panel; each render is shown to the user for approval first. Approved documents are staged outside the project tree and CANNOT create or modify project files — use \`propose_edit\` for anything that belongs in the project.
+- Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
 - \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
 
 // ---------------------------------------------------------------------------
@@ -331,39 +331,22 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// -----------------------------------------------------------------------
-	// 2. write_content — ungated document channel into the app's content panel
+	// 2. show_content — display channel into the app's content panel.
+	//    Ungated: it only displays a document; the staged copy lives outside
+	//    the project tree so nothing the user works on is mutated.
 	// -----------------------------------------------------------------------
 
 	pi.registerTool({
-		name: "write_content",
-		label: "Write Content",
+		name: "show_content",
+		label: "Show Content",
 		description:
-			"Render a document (usually Markdown) into the user's content panel. Every render is shown to the user for approval first. Approved documents are staged OUTSIDE the project tree: this tool cannot create or modify project files (use propose_edit for those).",
-		promptSnippet: "Render a markdown document into the user's content panel (approval-gated)",
+			"Display a document (usually Markdown) to the user in the app's content panel. This is NOT a file-writing tool: it creates no project files and modifies nothing the user works on — it only displays the document. If the user asked you to create, write, or save a file, use propose_edit instead.",
+		promptSnippet: "Display a markdown document in the user's content panel",
 		promptGuidelines: [
-			"Use write_content for documents the user should read (reports, plans, notes, summaries); it does not create project files — use propose_edit for anything that belongs in the project.",
+			"Use show_content to display documents for the user to read (reports, plans, notes, summaries); it never creates project files — use propose_edit for anything that belongs in the project.",
 		],
-		parameters: WriteContentParamsSchema,
-		async execute(toolCallId, params, _signal, _onUpdate, _ctx) {
-			// Approval gate — wire contract with the Go backend. The backend
-			// shows the document in the content panel and promotes it there
-			// only on approval. No timeout: open until the user decides.
-			const approved = await ctx.ui.confirm(
-				"custard://write_content",
-				JSON.stringify({ toolCallId, path: params.path, content: params.content }),
-			);
-			if (!approved) {
-				return {
-					content: [
-						{
-							type: "text",
-							text: "The user declined to render this document. Do NOT retry the same render; the user will follow up in chat with what to change.",
-						},
-					],
-					details: { path: params.path, rendered: false },
-				};
-			}
-
+		parameters: ShowContentParamsSchema,
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const absPath = stagingPath(params.path);
 			await withFileMutationQueue(absPath, async () => {
 				await mkdir(dirname(absPath), { recursive: true });
@@ -371,10 +354,10 @@ export default function (pi: ExtensionAPI) {
 			});
 
 			// Keep the result tiny: the backend renders path/content from the
-			// approval payload, not from this result.
+			// tool call arguments, not from this result.
 			return {
-				content: [{ type: "text", text: "content rendered to the user's panel" }],
-				details: { path: params.path, rendered: true },
+				content: [{ type: "text", text: `displayed "${params.path}" in the user's content panel` }],
+				details: { path: params.path },
 			};
 		},
 	});

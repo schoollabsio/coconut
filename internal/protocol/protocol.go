@@ -81,13 +81,13 @@ type ErrorMessage struct {
 // ---------------------------------------------------------------------------
 
 const (
-	CmdSessionRestore  = "session.restore"
-	CmdSessionRename   = "session.rename"
-	CmdWorkspacePick   = "workspace.pick" // opens native dir picker
-	CmdWorkspaceSet    = "workspace.set"
-	CmdAgentStart      = "agent.start"
-	CmdAgentCancel     = "agent.cancel"
-	CmdApprovalRespond = "agent.approval.respond"
+	CmdSessionRestore   = "session.restore"
+	CmdSessionRename    = "session.rename"
+	CmdWorkspacePick    = "workspace.pick" // opens native dir picker
+	CmdWorkspaceSet     = "workspace.set"
+	CmdAgentStart       = "agent.start"
+	CmdAgentCancel      = "agent.cancel"
+	CmdApprovalRespond  = "agent.approval.respond"
 	CmdSettingsGet      = "settings.get"
 	CmdSettingsSave     = "settings.save"
 	CmdSettingsValidate = "settings.validate"
@@ -204,7 +204,7 @@ const (
 
 type ToolCall struct {
 	ID         string `json:"id"`
-	Tool       string `json:"tool"`           // pi toolName: read, bash, propose_edit, write_content, …
+	Tool       string `json:"tool"`           // pi toolName: read, bash, propose_edit, show_content, …
 	Label      string `json:"label"`          // display line, e.g. "Read App.tsx"
 	Path       string `json:"path,omitempty"` // primary file, if any
 	Status     string `json:"status"`
@@ -213,9 +213,8 @@ type ToolCall struct {
 
 // Approval kinds.
 const (
-	ApprovalKindProposeEdit  = "propose_edit"
-	ApprovalKindBash         = "bash"
-	ApprovalKindWriteContent = "write_content"
+	ApprovalKindProposeEdit = "propose_edit"
+	ApprovalKindBash        = "bash"
 )
 
 type ApprovalRequest struct {
@@ -229,9 +228,6 @@ type ApprovalRequest struct {
 	Diff string `json:"diff,omitempty"` // unified diff text, rendered line-wise
 	// bash:
 	Command string `json:"command,omitempty"`
-	// write_content: full document body; promoted to the content panel
-	// only if the user approves.
-	Content string `json:"content,omitempty"`
 }
 
 type ApprovalResolvedPayload struct {
