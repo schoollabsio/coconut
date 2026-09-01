@@ -2,7 +2,7 @@
 
 /* Palette (warm dark): canonical tokens, also exposed for direct CSS use. */
 :root {
-  --bg: #12100D;
+  --bg: #101012;
   --surface: #1A1713;
   --surface-2: #211D18;
   --border: #2E2820;
@@ -21,8 +21,8 @@
    raised/linestrong/dim/faint are interpolations of the palette for
    hover fills, stronger borders, and tertiary text. */
 @theme {
-  --color-base: #12100d;
-  --color-onaccent: #12100d;
+  --color-base: #101012;
+  --color-onaccent: #101012;
   --color-surface: #1a1713;
   --color-surface2: #211d18;
   --color-raised: #2e2820;
