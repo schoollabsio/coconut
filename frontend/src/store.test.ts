@@ -72,6 +72,9 @@ describe('UIStore', () => {
   it('replaces the streaming message when its final version arrives', async () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(1))
+    // In the real flow, agent.started sets status to 'thinking' before
+    // any token streams are emitted.
+    s.applyBackendMessage(ev(2, Ev.AgentStarted))
     s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hel' } })
     s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hello' } })
     await new Promise((r) => setTimeout(r, 5)) // let the rAF flush land
@@ -80,10 +83,32 @@ describe('UIStore', () => {
     expect(msgs.find((m) => m.id === 'm9')?.text).toBe('hello')
     expect(msgs.find((m) => m.id === 'm9')?.streaming).toBe(true)
 
-    s.applyBackendMessage(ev(2, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'hello' }))
+    s.applyBackendMessage(ev(3, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'hello' }))
     msgs = s.state.agent.messages
     expect(msgs.filter((m) => m.id === 'm9')).toHaveLength(1)
     expect(msgs.find((m) => m.id === 'm9')?.streaming).toBeUndefined()
+  })
+
+  it('ignores token streams that flush after agent.completed', async () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStarted))
+    // Stream the final cumulative text — it's buffered via rAF, which
+    // hasn't fired yet.
+    s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'final' } })
+    // Events fire synchronously: the message is finalized and the agent
+    // completes before the rAF flush lands.
+    s.applyBackendMessage(ev(3, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'final' }))
+    s.applyBackendMessage(ev(4, Ev.AgentCompleted))
+    expect(s.state.agent.status).toBe('idle')
+    const msg = s.state.agent.messages.find((m) => m.id === 'm9')
+    expect(msg?.streaming).toBe(false)
+
+    // Now let the buffered stream flush.
+    await new Promise((r) => setTimeout(r, 5))
+    expect(s.state.agent.status).toBe('idle') // not reset to 'streaming'
+    const after = s.state.agent.messages.find((m) => m.id === 'm9')
+    expect(after?.streaming).toBe(false) // still finalized, not re-marked
   })
 
   it('tracks approvals: focus on request, clear on resolve', () => {

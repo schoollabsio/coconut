@@ -252,10 +252,18 @@ export class UIStore {
         break
       }
       case Ev.AgentCompleted:
-        this.setAgent({ status: 'idle' })
+        // Finalize any messages still marked streaming — a RAF-buffered
+        // token stream may have set streaming:true just before we here.
+        this.setAgent({
+          status: 'idle',
+          messages: this.state.agent.messages.map((m) => ({ ...m, streaming: false })),
+        })
         break
       case Ev.AgentFailed:
-        this.setAgent({ status: 'error' })
+        this.setAgent({
+          status: 'error',
+          messages: this.state.agent.messages.map((m) => ({ ...m, streaming: false })),
+        })
         this.pushNotification('error', (p?.message as string) ?? 'agent failed')
         break
       case Ev.SidecarLost:
@@ -347,6 +355,11 @@ export class UIStore {
 
   private applyStream(name: string, payload: unknown) {
     if (name !== Stream.AgentToken) return
+    // A RAF-buffered token stream can flush *after* agent.completed fires
+    // (streams are unsequenced; events are processed synchronously).  Guard
+    // against re-activating a terminal state: don't reset status to
+    // 'streaming' or re-mark a finalized message as streaming.
+    if (this.state.agent.status === 'idle' || this.state.agent.status === 'error') return
     const { messageId, text } = payload as { messageId: string; text: string }
     const messages = [...this.state.agent.messages]
     const idx = messages.findIndex((m) => m.id === messageId)

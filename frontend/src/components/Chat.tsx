@@ -69,7 +69,7 @@ export function Chat({ client }: { client: BackendClient }) {
           ),
         )}
         {busy && !messages[messages.length - 1]?.streaming && (
-          <div className="flex gap-3">
+          <div className="flex items-center gap-3">
             <span className="bg-gradient-to-br from-accent to-accenthover bg-clip-text text-transparent select-none mt-0.5">
               ✦
             </span>

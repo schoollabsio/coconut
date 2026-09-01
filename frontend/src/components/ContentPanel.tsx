@@ -33,7 +33,7 @@ export function ContentPanel({ client }: { client: BackendClient }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-line bg-base overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col bg-base overflow-hidden">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className={`w-2 h-2 rounded-full ${dot}`} />
         <span className="text-xs font-mono text-mute truncate" title={fileLabel}>
