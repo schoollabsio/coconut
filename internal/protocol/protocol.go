@@ -115,6 +115,7 @@ const (
 	EvAgentFailed        = "agent.failed"
 	EvSidecarLost        = "agent.sidecar.lost"
 	EvContentUpdated     = "content.updated"
+	EvWindowStateChanged = "window.state.changed"
 	EvSettingsChanged    = "settings.changed"
 	EvNotification       = "notification.created"
 )
@@ -323,6 +324,10 @@ type AgentFailedPayload struct {
 type NotificationPayload struct {
 	Level   string `json:"level"` // "info" | "warning" | "error"
 	Message string `json:"message"`
+}
+
+type WindowStatePayload struct {
+	Fullscreen bool `json:"fullscreen"`
 }
 
 // ---------------------------------------------------------------------------

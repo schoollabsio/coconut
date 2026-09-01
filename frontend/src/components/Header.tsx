@@ -9,6 +9,7 @@ import { store, useUIState } from '../store'
 export function Header({ client }: { client: BackendClient }) {
   const agentName = useUIState((s) => s.agentName)
   const workspace = useUIState((s) => s.workspace)
+  const isFullscreen = useUIState((s) => s.isFullscreen)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const fitName = () => {
@@ -42,7 +43,7 @@ export function Header({ client }: { client: BackendClient }) {
     // pl-[76px]: the window's traffic-light buttons float over the top-left
     // (hidden titlebar). The strip itself drags the window (inherited from
     // the app root's drag-region); interactive elements opt out (no-drag).
-    <div className="flex items-center gap-2 pl-[76px] pr-2 pt-1 pb-2 mb-1 border-b border-gray-800">
+    <div className={`flex items-center gap-2 pr-2 pt-1 pb-2 mb-1 ${isFullscreen ? 'pl-2' : 'pl-[76px]'}`}>
       <input
         ref={inputRef}
         defaultValue={agentName}
@@ -54,13 +55,13 @@ export function Header({ client }: { client: BackendClient }) {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         }}
         onInput={fitName}
-        className="no-drag min-w-0 bg-transparent text-sm text-gray-200 rounded-md px-1.5 py-0.5 border border-transparent hover:border-gray-700 hover:bg-gray-800 focus:border-gray-600 focus:bg-gray-800 outline-none transition-colors"
+        className="no-drag min-w-0 bg-transparent text-sm text-ink rounded-md px-1.5 py-0.5 border border-transparent hover:border-linestrong hover:bg-surface2 focus:border-linestrong focus:bg-surface2 outline-none transition-colors"
       />
       <button
         aria-label="Agents and sessions"
         title="Switch agent or open a previous session"
         onClick={openAgents}
-        className="no-drag shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag shrink-0 p-1 rounded-md text-dim hover:text-ink hover:bg-surface2 transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -70,7 +71,7 @@ export function Header({ client }: { client: BackendClient }) {
         aria-label="New session"
         title="New session (current transcript stays on disk)"
         onClick={resetSession}
-        className="no-drag shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag shrink-0 p-1 rounded-md text-dim hover:text-ink hover:bg-surface2 transition-colors"
       >
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path
@@ -80,14 +81,14 @@ export function Header({ client }: { client: BackendClient }) {
           />
         </svg>
       </button>
-      <span className="h-3.5 w-px bg-gray-800 shrink-0" />
+      <span className="h-3.5 w-px bg-surface2 shrink-0" />
       <button
         onClick={pickWorkspace}
         title={workspace ? `${workspace.path} — click to change` : 'Choose a workspace folder'}
-        className="no-drag flex items-center gap-2 min-w-0 rounded-md px-1.5 py-0.5 hover:bg-gray-800 transition-colors group"
+        className="no-drag flex items-center gap-2 min-w-0 rounded-md px-1.5 py-0.5 hover:bg-surface2 transition-colors group"
       >
         <svg
-          className="w-3.5 h-3.5 shrink-0 text-gray-600 group-hover:text-gray-400"
+          className="w-3.5 h-3.5 shrink-0 text-faint group-hover:text-mute"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -99,14 +100,14 @@ export function Header({ client }: { client: BackendClient }) {
             d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"
           />
         </svg>
-        <span className="font-mono text-xs text-gray-500 truncate max-w-[40vw] group-hover:text-gray-400">
+        <span className="font-mono text-xs text-dim truncate max-w-[40vw] group-hover:text-mute">
           {workspace ? workspace.path : 'choose workspace…'}
         </span>
       </button>
       <button
         aria-label="Open settings"
         onClick={() => store.setSettingsOpen(true)}
-        className="no-drag ml-auto shrink-0 p-1.5 rounded-lg text-gray-500 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+        className="no-drag ml-auto shrink-0 p-1.5 rounded-lg text-dim hover:text-ink hover:bg-surface2 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path

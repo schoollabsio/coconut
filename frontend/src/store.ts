@@ -19,6 +19,7 @@ import type {
   SnapshotMessage,
   StreamMessage,
   ToolCall,
+  WindowStatePayload,
   WorkspaceChangedPayload,
   WorkspaceInfo,
 } from './protocol'
@@ -37,6 +38,8 @@ export interface UIState {
   agentSlug: string
   workspace: WorkspaceInfo | null
   needsWorkspace: boolean
+  /** macOS fullscreen: traffic lights hidden, so the Header can drop its left padding. */
+  isFullscreen: boolean
   agent: {
     status: AgentStatus
     messages: ChatMessage[]
@@ -62,6 +65,7 @@ const initialState: UIState = {
   agentSlug: '',
   workspace: null,
   needsWorkspace: false,
+  isFullscreen: false,
   agent: { status: 'idle', messages: [], toolCalls: [] },
   content: null,
   pendingApprovals: [],
@@ -279,6 +283,9 @@ export class UIStore {
           focusedApprovalId: null,
           content: null,
         })
+        break
+      case Ev.WindowStateChanged:
+        this.set({ isFullscreen: (p as WindowStatePayload).fullscreen })
         break
       case Ev.Notification:
         this.pushNotification((p?.level as Notification['level']) ?? 'info', String(p?.message ?? ''))

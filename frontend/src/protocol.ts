@@ -91,6 +91,7 @@ export const Ev = {
   AgentFailed: 'agent.failed',
   SidecarLost: 'agent.sidecar.lost',
   ContentUpdated: 'content.updated',
+  WindowStateChanged: 'window.state.changed',
   SettingsChanged: 'settings.changed',
   Notification: 'notification.created',
 } as const
@@ -205,6 +206,10 @@ export interface WorkspaceChangedPayload {
 export interface TokenPayload {
   messageId: string
   text: string // cumulative
+}
+
+export interface WindowStatePayload {
+  fullscreen: boolean
 }
 
 export type ApprovalDecision = 'allow' | 'dismiss'

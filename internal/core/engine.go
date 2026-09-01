@@ -79,6 +79,7 @@ type piRespInput struct {
 
 type flushInput struct{}
 type shutdownInput struct{}
+type windowStateInput struct{ fullscreen bool }
 
 func (cmdInput) coreInput()      {}
 func (snapshotInput) coreInput() {}
@@ -87,6 +88,7 @@ func (piGoneInput) coreInput()   {}
 func (piRespInput) coreInput()   {}
 func (flushInput) coreInput()    {}
 func (shutdownInput) coreInput() {}
+func (windowStateInput) coreInput() {}
 
 // NewEngine loads settings and prepares state; no sidecar yet.
 func NewEngine(cfg EngineConfig) (*Engine, error) {
@@ -180,6 +182,15 @@ func (e *Engine) RequestSnapshot() []byte {
 	return <-respond
 }
 
+// SetWindowState updates the OS window fullscreen state (macOS). Safe to
+// call from any goroutine; routed through the actor inbox for sequencing.
+func (e *Engine) SetWindowState(fullscreen bool) {
+	select {
+	case e.inbox <- windowStateInput{fullscreen: fullscreen}:
+	case <-e.done:
+	}
+}
+
 // ---------------------------------------------------------------------------
 // actor dispatch
 // ---------------------------------------------------------------------------
@@ -201,6 +212,9 @@ func (e *Engine) handle(in input) {
 		}
 	case flushInput:
 		e.flushStreamsLocked()
+	case windowStateInput:
+		e.emitEvent(protocol.EvWindowStateChanged,
+			protocol.WindowStatePayload{Fullscreen: v.fullscreen}, "")
 	}
 }
 

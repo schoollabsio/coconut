@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/jschool/custard/internal/core"
 	"github.com/jschool/custard/internal/piadapter"
@@ -46,6 +47,32 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.engine = engine
 	go engine.Run(ctx)
+	go a.pollWindowState(ctx)
+}
+
+// pollWindowState tracks macOS fullscreen transitions. Wails' runtime
+// exposes WindowIsFullscreen but emits no change notification, so we poll
+// on a timer and forward diffs to the engine (via its inbox) for
+// sequenced delivery to the frontend.
+func (a *App) pollWindowState(ctx context.Context) {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	var last bool
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if a.engine == nil {
+				return
+			}
+			fs := runtime.WindowIsFullscreen(a.ctx)
+			if fs != last {
+				last = fs
+				a.engine.SetWindowState(fs)
+			}
+		}
+	}
 }
 
 // shutdown is called when the app is closing.
