@@ -109,12 +109,12 @@ export function SettingsModal({ client }: { client: BackendClient }) {
         if (e.target === e.currentTarget) close()
       }}
     >
-      <div className="no-drag w-full max-w-2xl rounded-xl border border-gray-800 bg-gray-900 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between border-b border-gray-800 px-4 py-2.5 shrink-0">
-          <span className="text-xs font-mono text-gray-400">settings.yaml</span>
+      <div className="no-drag w-full max-w-2xl rounded-xl border border-line bg-surface shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between border-b border-line px-4 py-2.5 shrink-0">
+          <span className="text-xs font-mono text-mute">settings.yaml</span>
           <div className="flex items-center gap-2">
-            {validating && <span className="text-[10px] text-gray-500">validating…</span>}
-            <button aria-label="Close settings" onClick={close} className="text-gray-500 hover:text-gray-200 transition-colors">
+            {validating && <span className="text-[10px] text-dim">validating…</span>}
+            <button aria-label="Close settings" onClick={close} className="text-dim hover:text-ink transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -127,36 +127,36 @@ export function SettingsModal({ client }: { client: BackendClient }) {
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
           aria-label="Settings YAML"
-          className="flex-1 min-h-72 bg-gray-950 px-4 py-3 text-gray-200 font-mono text-xs leading-relaxed outline-none resize-none"
+          className="flex-1 min-h-72 bg-base px-4 py-3 text-ink font-mono text-xs leading-relaxed outline-none resize-none"
         />
 
         {(problems.length > 0 || saveError) && (
-          <div className="border-t border-gray-800 px-4 py-2 max-h-36 overflow-y-auto shrink-0">
+          <div className="border-t border-line px-4 py-2 max-h-36 overflow-y-auto shrink-0">
             {saveError && (
               <div className="flex gap-2 py-0.5 text-xs">
-                <span className="text-red-400 shrink-0">✕</span>
-                <span className="text-red-300">{saveError}</span>
+                <span className="text-danger shrink-0">✕</span>
+                <span className="text-danger">{saveError}</span>
               </div>
             )}
             {problems.map((p, i) => (
               <div key={i} className="flex gap-2 py-0.5 text-xs">
-                <span className={`shrink-0 ${p.severity === 'error' ? 'text-red-400' : 'text-yellow-400'}`}>
+                <span className={`shrink-0 ${p.severity === 'error' ? 'text-danger' : 'text-warn'}`}>
                   {p.severity === 'error' ? '✕' : '⚠'}
                 </span>
-                <span className={p.severity === 'error' ? 'text-red-300' : 'text-yellow-200/80'}>{p.message}</span>
+                <span className={p.severity === 'error' ? 'text-danger' : 'text-warn/80'}>{p.message}</span>
               </div>
             ))}
           </div>
         )}
 
-        <div className="flex items-center justify-between border-t border-gray-800 px-4 py-2.5 shrink-0">
-          <span className="text-[10px] text-gray-600">
+        <div className="flex items-center justify-between border-t border-line px-4 py-2.5 shrink-0">
+          <span className="text-[10px] text-faint">
             saving restarts the agent with the new config
           </span>
           <div className="flex gap-2">
             <button
               onClick={close}
-              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs text-mute hover:text-ink hover:bg-surface2 transition-colors"
             >
               Cancel
             </button>
@@ -164,7 +164,7 @@ export function SettingsModal({ client }: { client: BackendClient }) {
               onClick={() => void save()}
               disabled={hasErrors || validating || saving}
               title={hasErrors ? 'Fix the errors above to save' : undefined}
-              className="px-3 py-1.5 rounded-lg text-xs bg-blue-500 hover:bg-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+              className="px-3 py-1.5 rounded-lg text-xs bg-accent hover:bg-accenthover disabled:opacity-50 disabled:cursor-not-allowed text-onaccent transition-colors"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>

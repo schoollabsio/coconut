@@ -16,25 +16,25 @@ export function ContentPanel({ client }: { client: BackendClient }) {
 
   const approval = pendingApprovals.find((a) => a.id === focusedApprovalId) ?? null
 
-  let dot = 'bg-gray-700'
+  let dot = 'bg-raised'
   let fileLabel = content?.path ?? 'content.md'
   let statusText = 'preview'
-  let statusClass = 'text-gray-600'
+  let statusClass = 'text-faint'
 
   if (approval) {
-    dot = 'bg-yellow-400 animate-pulse'
+    dot = 'bg-warn animate-pulse'
     fileLabel = approval.path ?? (approval.kind === 'bash' ? 'shell' : fileLabel)
     statusText = 'pending approval'
-    statusClass = 'text-yellow-400'
+    statusClass = 'text-warn'
   } else if (content) {
-    dot = 'bg-emerald-400'
+    dot = 'bg-ok'
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-gray-800 bg-gray-950 overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-gray-800 px-3 py-2">
+    <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-line bg-base overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className={`w-2 h-2 rounded-full ${dot}`} />
-        <span className="text-xs font-mono text-gray-400 truncate" title={fileLabel}>
+        <span className="text-xs font-mono text-mute truncate" title={fileLabel}>
           {fileLabel}
         </span>
         <span className={`ml-auto text-[10px] uppercase tracking-wider ${statusClass}`}>{statusText}</span>
@@ -48,9 +48,9 @@ export function ContentPanel({ client }: { client: BackendClient }) {
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
-          <div className="border border-dashed border-gray-700 rounded-lg px-8 py-10 text-center">
-            <div className="text-gray-500 text-sm">Agent content renders here</div>
-            <div className="text-gray-600 text-xs mt-1 font-mono">awaiting output…</div>
+          <div className="border border-dashed border-linestrong rounded-lg px-8 py-10 text-center">
+            <div className="text-dim text-sm">Agent content renders here</div>
+            <div className="text-faint text-xs mt-1 font-mono">awaiting output…</div>
           </div>
         </div>
       )}
@@ -70,30 +70,30 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
         <>
           {approval.what && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">What</div>
-              <p className="text-sm text-gray-200 leading-relaxed">{approval.what}</p>
+              <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">What</div>
+              <p className="text-sm text-ink leading-relaxed">{approval.what}</p>
             </div>
           )}
           {approval.why && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Why</div>
-              <div className="text-sm text-gray-400 leading-relaxed">{approval.why}</div>
+              <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Why</div>
+              <div className="text-sm text-mute leading-relaxed">{approval.why}</div>
             </div>
           )}
           {approval.diff && (
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Diff</div>
+              <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Diff</div>
               <DiffView diff={approval.diff} />
             </div>
           )}
         </>
       ) : (
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-yellow-300/80 mb-1">Command</div>
-          <pre className="rounded-lg border border-gray-800 bg-gray-950 px-3 py-2.5 font-mono text-xs text-gray-200 overflow-x-auto whitespace-pre-wrap">
+          <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Command</div>
+          <pre className="rounded-lg border border-line bg-base px-3 py-2.5 font-mono text-xs text-ink overflow-x-auto whitespace-pre-wrap">
             {approval.command}
           </pre>
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-dim mt-2">
             This command is not on the whitelist. Approve to run it once; approve similar commands automatically by
             extending the whitelist in settings.
           </p>
@@ -104,13 +104,13 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
         <button
           onClick={() => respond('dismiss')}
           title="Skip this for now — tell the agent what to change in chat"
-          className="px-3 py-1.5 rounded-lg text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors"
+          className="px-3 py-1.5 rounded-lg text-xs text-dim hover:text-mute hover:bg-surface2 transition-colors"
         >
           Dismiss
         </button>
         <button
           onClick={() => respond('allow')}
-          className="px-3 py-1.5 rounded-lg text-xs bg-emerald-500 hover:bg-emerald-400 text-white transition-colors"
+          className="px-3 py-1.5 rounded-lg text-xs bg-ok hover:brightness-110 hover:bg-ok text-onaccent transition-colors"
         >
           Approve
         </button>
@@ -123,7 +123,7 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
 function DiffView({ diff }: { diff: string }) {
   const lines = diff.split('\n')
   return (
-    <div className="rounded-lg border border-gray-800 bg-gray-950 py-2 font-mono text-xs leading-5 overflow-x-auto">
+    <div className="rounded-lg border border-line bg-base py-2 font-mono text-xs leading-5 overflow-x-auto">
       {lines.map((line, i) => (
         <div key={i} className={`px-3 whitespace-pre ${diffLineClass(line)}`}>
           {line || ' '}
@@ -134,9 +134,9 @@ function DiffView({ diff }: { diff: string }) {
 }
 
 function diffLineClass(line: string): string {
-  if (line.startsWith('---') || line.startsWith('+++')) return 'text-gray-600'
-  if (line.startsWith('@@') || line === '…') return 'text-blue-300/80 bg-blue-500/5'
-  if (line.startsWith('+')) return 'bg-emerald-500/10 text-emerald-300'
-  if (line.startsWith('-')) return 'bg-red-500/10 text-red-300'
-  return 'text-gray-400'
+  if (line.startsWith('---') || line.startsWith('+++')) return 'text-faint'
+  if (line.startsWith('@@') || line === '…') return 'text-info/80 bg-accentsoft'
+  if (line.startsWith('+')) return 'bg-ok/10 text-ok'
+  if (line.startsWith('-')) return 'bg-danger/10 text-danger'
+  return 'text-mute'
 }

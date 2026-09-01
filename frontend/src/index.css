@@ -1,13 +1,58 @@
 @import "tailwindcss";
 
+/* Palette (warm dark): canonical tokens, also exposed for direct CSS use. */
+:root {
+  --bg: #12100D;
+  --surface: #1A1713;
+  --surface-2: #211D18;
+  --border: #2E2820;
+  --text: #EFE7D8;
+  --muted: #B8AC97;
+  --accent: #E4B85F;
+  --accent-hover: #F2CD7F;
+  --accent-soft: rgba(228, 184, 95, 0.12);
+  --success: #8BB88A;
+  --warning: #E08A4B;
+  --danger: #D96357;
+  --info: #7FA8C9;
+}
+
+/* Tailwind v4 theme: semantic utilities (bg-base, text-mute, …).
+   raised/linestrong/dim/faint are interpolations of the palette for
+   hover fills, stronger borders, and tertiary text. */
+@theme {
+  --color-base: #12100d;
+  --color-onaccent: #12100d;
+  --color-surface: #1a1713;
+  --color-surface2: #211d18;
+  --color-raised: #2e2820;
+  --color-line: #2e2820;
+  --color-linestrong: #3b3327;
+  --color-ink: #efe7d8;
+  --color-mute: #b8ac97;
+  --color-dim: #8a7f6b;
+  --color-faint: #6e6455;
+  --color-accent: #e4b85f;
+  --color-accenthover: #f2cd7f;
+  --color-accentsoft: rgb(228 184 95 / 0.12);
+  --color-ok: #8bb88a;
+  --color-warn: #e08a4b;
+  --color-danger: #d96357;
+  --color-info: #7fa8c9;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
-  background: #030712; /* gray-950 */
-  color: #e5e7eb;
+  background: var(--bg);
+  color: var(--text);
   font-family: ui-sans-serif, system-ui, sans-serif;
   overscroll-behavior: none;
   user-select: none;
+}
+
+::selection {
+  background: rgba(228, 184, 95, 0.28);
 }
 
 /* macOS hidden-titlebar integration: the header row acts as the window

@@ -45,15 +45,15 @@ export function AgentPicker({ client }: { client: BackendClient }) {
       onClick={() => store.closeAgentPicker()}
     >
       <div
-        className="no-drag w-[680px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border border-gray-700 bg-gray-900 shadow-2xl"
+        className="no-drag w-[680px] max-w-[92vw] max-h-[80vh] flex flex-col rounded-xl border border-linestrong bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-          <h2 className="text-sm font-medium text-gray-200">Agents &amp; sessions</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+          <h2 className="text-sm font-medium text-ink">Agents &amp; sessions</h2>
           <button
             aria-label="Close"
             onClick={() => store.closeAgentPicker()}
-            className="p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-gray-800"
+            className="p-1 rounded-md text-dim hover:text-ink hover:bg-surface2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -63,22 +63,22 @@ export function AgentPicker({ client }: { client: BackendClient }) {
 
         <div className="flex-1 min-h-0 grid grid-cols-[220px_1fr]">
           {/* Agents */}
-          <div className="border-r border-gray-800 overflow-y-auto">
+          <div className="border-r border-line overflow-y-auto">
             {agents.map((a) => (
               <button
                 key={a.slug}
                 onClick={() => setSelectedSlug(a.slug)}
-                className={`w-full text-left px-3 py-2 border-b border-gray-800/60 transition-colors ${
-                  selected?.slug === a.slug ? 'bg-gray-800' : 'hover:bg-gray-800/50'
+                className={`w-full text-left px-3 py-2 border-b border-line/60 transition-colors ${
+                  selected?.slug === a.slug ? 'bg-surface2' : 'hover:bg-surface2/50'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm text-gray-200 truncate">{a.name}</span>
+                  <span className="text-sm text-ink truncate">{a.name}</span>
                   {a.slug === currentSlug && (
-                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-emerald-400">open</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-ok">open</span>
                   )}
                 </div>
-                <div className="text-[11px] text-gray-500 font-mono truncate">{a.slug}</div>
+                <div className="text-[11px] text-dim font-mono truncate">{a.slug}</div>
               </button>
             ))}
             <div className="p-2">
@@ -90,12 +90,12 @@ export function AgentPicker({ client }: { client: BackendClient }) {
                 }}
                 placeholder="New agent name…"
                 spellCheck={false}
-                className="w-full bg-gray-800 text-sm text-gray-200 rounded-md px-2 py-1 border border-gray-700 focus:border-gray-500 outline-none"
+                className="w-full bg-surface2 text-sm text-ink rounded-md px-2 py-1 border border-linestrong focus:border-linestrong outline-none"
               />
               <button
                 onClick={createAgent}
                 disabled={!newName.trim() || busy}
-                className="mt-1.5 w-full text-xs px-2 py-1 rounded-md bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+                className="mt-1.5 w-full text-xs px-2 py-1 rounded-md bg-surface2 text-mute hover:bg-raised disabled:opacity-40"
               >
                 + New agent
               </button>
@@ -106,11 +106,11 @@ export function AgentPicker({ client }: { client: BackendClient }) {
           <div className="overflow-y-auto">
             {selected && (
               <>
-                <div className="sticky top-0 bg-gray-900 px-3 py-2 border-b border-gray-800">
+                <div className="sticky top-0 bg-surface px-3 py-2 border-b border-line">
                   <button
                     onClick={() => void openAgent({ slug: selected.slug, new: true })}
                     disabled={busy}
-                    className="text-xs px-2 py-1 rounded-md bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-40"
+                    className="text-xs px-2 py-1 rounded-md bg-surface2 text-ink hover:bg-raised disabled:opacity-40"
                   >
                     + New session
                   </button>
@@ -120,30 +120,30 @@ export function AgentPicker({ client }: { client: BackendClient }) {
                         void openAgent({ slug: selected.slug, sessionFile: selected.sessions.find((s) => s.current)!.file })
                       }
                       disabled={busy}
-                      className="ml-2 text-xs px-2 py-1 rounded-md bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-40"
+                      className="ml-2 text-xs px-2 py-1 rounded-md bg-surface2 text-ink hover:bg-raised disabled:opacity-40"
                     >
                       Resume latest
                     </button>
                   )}
                 </div>
                 {selected.sessions.length === 0 && (
-                  <p className="px-3 py-4 text-xs text-gray-500">No sessions yet for this agent.</p>
+                  <p className="px-3 py-4 text-xs text-dim">No sessions yet for this agent.</p>
                 )}
                 {selected.sessions.map((s) => (
                   <button
                     key={s.file}
                     onClick={() => void openAgent({ slug: selected.slug, sessionFile: s.file })}
                     disabled={busy}
-                    className="w-full text-left px-3 py-2 border-b border-gray-800/60 hover:bg-gray-800/50 transition-colors disabled:opacity-40"
+                    className="w-full text-left px-3 py-2 border-b border-line/60 hover:bg-surface2/50 transition-colors disabled:opacity-40"
                   >
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xs text-gray-300">{relativeTime(s.startedAt)}</span>
+                      <span className="text-xs text-mute">{relativeTime(s.startedAt)}</span>
                       {s.current && (
-                        <span className="text-[10px] uppercase tracking-wide text-emerald-400">current</span>
+                        <span className="text-[10px] uppercase tracking-wide text-ok">current</span>
                       )}
-                      <span className="ml-auto text-[10px] text-gray-600 font-mono">{formatBytes(s.sizeBytes)}</span>
+                      <span className="ml-auto text-[10px] text-faint font-mono">{formatBytes(s.sizeBytes)}</span>
                     </div>
-                    {s.preview && <div className="mt-0.5 text-xs text-gray-500 truncate">{s.preview}</div>}
+                    {s.preview && <div className="mt-0.5 text-xs text-dim truncate">{s.preview}</div>}
                   </button>
                 ))}
               </>

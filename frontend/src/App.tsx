@@ -84,17 +84,17 @@ export default function App() {
   return (
     // Content fills the whole window (hidden titlebar). The root is the
     // window drag region; interactive containers opt back out (no-drag).
-    <div className="drag-region h-full flex flex-col bg-gray-900">
+    <div className="drag-region h-full flex flex-col bg-surface">
       <Header client={client} />
 
       {needsWorkspace ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="no-drag border border-dashed border-gray-700 rounded-lg px-10 py-12 text-center">
-            <div className="text-gray-300 text-sm font-medium">Choose a workspace to begin</div>
-            <div className="text-gray-500 text-xs mt-1 mb-4">The agent reads and proposes changes inside this folder.</div>
+          <div className="no-drag border border-dashed border-linestrong rounded-lg px-10 py-12 text-center">
+            <div className="text-mute text-sm font-medium">Choose a workspace to begin</div>
+            <div className="text-dim text-xs mt-1 mb-4">The agent reads and proposes changes inside this folder.</div>
             <button
               onClick={() => void client.command(Cmd.WorkspacePick, {})}
-              className="px-4 py-2 rounded-lg text-sm bg-blue-500 hover:bg-blue-400 text-white transition-colors"
+              className="px-4 py-2 rounded-lg text-sm bg-accent hover:bg-accenthover text-onaccent transition-colors"
             >
               Choose folder…
             </button>
@@ -119,10 +119,10 @@ export default function App() {
             onClick={() => store.dismissNotification(n.id)}
             className={`text-left text-xs rounded-lg border px-3 py-2 shadow-lg backdrop-blur transition-colors ${
               n.level === 'error'
-                ? 'border-red-500/40 bg-red-950/80 text-red-200'
+                ? 'border-danger/40 bg-danger/15 text-danger'
                 : n.level === 'warning'
-                  ? 'border-yellow-500/40 bg-yellow-950/80 text-yellow-200'
-                  : 'border-gray-700 bg-gray-900/80 text-gray-300'
+                  ? 'border-warn/40 bg-warn/15 text-warn'
+                  : 'border-linestrong bg-surface/80 text-mute'
             }`}
           >
             {n.message}
@@ -131,7 +131,7 @@ export default function App() {
       </div>
 
       {!connected && !needsWorkspace && (
-        <div className="fixed inset-x-0 top-0 z-30 text-center text-[11px] text-gray-500 bg-gray-950/80 py-0.5">
+        <div className="fixed inset-x-0 top-0 z-30 text-center text-[11px] text-dim bg-base/80 py-0.5">
           connecting…
         </div>
       )}

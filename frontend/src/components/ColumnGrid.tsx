@@ -82,10 +82,10 @@ export function ColumnGrid(props: { tools: ReactNode; chat: ReactNode; content: 
       onPointerDown={(e) => onHandlePointerDown(e, left, right, side)}
       className="group relative hidden md:flex items-stretch justify-center cursor-col-resize touch-none"
     >
-      <div className="w-px bg-gray-800 transition-colors group-hover:bg-blue-400" />
+      <div className="w-px bg-surface transition-colors group-hover:bg-accenthover" />
       {collapsed[side] && (
         <span
-          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-widest text-gray-500 select-none whitespace-nowrap [writing-mode:vertical-rl] ${side === 0 ? 'rotate-180' : ''}`}
+          className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] uppercase tracking-widest text-dim select-none whitespace-nowrap [writing-mode:vertical-rl] ${side === 0 ? 'rotate-180' : ''}`}
         >
           {label}
         </span>
@@ -97,7 +97,7 @@ export function ColumnGrid(props: { tools: ReactNode; chat: ReactNode; content: 
     <div
       ref={gridRef}
       style={gridStyle}
-      className="no-drag grid grid-cols-1 md:grid-cols-[1fr_12px_2fr_12px_2fr] divide-y md:divide-y-0 divide-gray-800 flex-1 min-h-0"
+      className="no-drag grid grid-cols-1 md:grid-cols-[1fr_12px_2fr_12px_2fr] divide-y md:divide-y-0 divide-line flex-1 min-h-0"
     >
       <div className={panelClass(0) + ' min-h-32'}>{props.tools}</div>
       {handle(0, 1, 0, 'Tools', 'Drag to resize · click to collapse tools')}
