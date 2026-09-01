@@ -110,3 +110,32 @@ describe('UIStore', () => {
     expect(s.state.content?.path).toBe('content.md')
   })
 })
+
+describe('approval focus reconciliation', () => {
+  it('refocuses a new approval after a resync dropped the old one (dangling focus regression)', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    // ap-1 pending and focused…
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, { id: 'ap-1', kind: 'propose_edit', title: 'Edit a', path: 'a', what: '', why: '', diff: '' }))
+    expect(s.state.focusedApprovalId).toBe('ap-1')
+    // …a resync lands a snapshot where the backend no longer has ap-1
+    // (agent switch / gap recovery): focus would dangle without reconcile.
+    s.applyBackendMessage(snap(3))
+    expect(s.state.pendingApprovals).toHaveLength(0)
+    expect(s.state.focusedApprovalId).toBeNull()
+    // The next approval must auto-focus (previously stayed stuck on ap-1).
+    s.applyBackendMessage(ev(4, Ev.ApprovalRequested, { id: 'ap-2', kind: 'bash', title: 'Run', command: 'ls' }))
+    expect(s.state.focusedApprovalId).toBe('ap-2')
+  })
+
+  it('keeps focus across a snapshot while the approval is still pending', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    const ap = { id: 'ap-1', kind: 'propose_edit', title: 'Edit a', path: 'a', what: '', why: '', diff: '' }
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, ap))
+    const withPending = snap(3)
+    withPending.state.pendingApprovals = [ap as never]
+    s.applyBackendMessage(withPending)
+    expect(s.state.focusedApprovalId).toBe('ap-1')
+  })
+})

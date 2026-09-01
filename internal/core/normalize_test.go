@@ -164,3 +164,81 @@ func TestShowContentFileMode(t *testing.T) {
 		t.Fatal("no error notification for missing file")
 	}
 }
+
+// A tool call that ends with its approval still pending (user aborted the
+// run mid-dialog) auto-dismisses the approval — no zombies.
+func TestToolEndDismissesPendingApproval(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.state.workspacePath = t.TempDir()
+
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc-9","toolName":"propose_edit","args":{"path":"a.md"}}`)
+	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"custard://propose_edit","message":"{\"toolCallId\":\"tc-9\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
+	if len(engine.state.approvals) != 1 {
+		t.Fatalf("approval not registered: %+v", engine.state.approvals)
+	}
+
+	// Tool ends (error/abort) without the approval being answered.
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"tc-9","toolName":"propose_edit","isError":true}`)
+	if len(engine.state.approvals) != 0 || len(engine.state.pendingByID) != 0 {
+		t.Fatal("zombie approval survived tool_execution_end")
+	}
+	name, raw, ok := collector.find(t, isEvent(protocol.EvApprovalResolved))
+	if !ok {
+		t.Fatal("no approval.resolved emitted for zombie")
+	}
+	var res protocol.ApprovalResolvedPayload
+	if err := json.Unmarshal(raw, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Decision != protocol.DecisionDismiss {
+		t.Fatalf("zombie resolution = %q, want dismiss", res.Decision)
+	}
+	_ = name
+}
+
+// …and the normal approve-then-finish path must NOT double-resolve.
+func TestApprovedToolEndDoesNotDoubleResolve(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine.state.workspacePath = t.TempDir()
+	go engine.Run(t.Context())
+
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc-1","toolName":"propose_edit","args":{"path":"a.md"}}`)
+	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"custard://propose_edit","message":"{\"toolCallId\":\"tc-1\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
+	apID := engine.state.approvals[0].ID
+
+	// User approves (respond path removes the pending entry)…
+	resp := sendCommand(t, engine, protocol.CmdApprovalRespond, map[string]any{"approvalId": apID, "decision": "allow"})
+	if !resp.OK {
+		t.Fatalf("approval.respond: %s", respBytes(resp))
+	}
+	// …then the tool finishes. No second approval.resolved.
+	before := 0
+	for _, _ = range collector.envs {
+		_ = before
+	} // (count via find below)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"tc-1","toolName":"propose_edit","isError":false}`)
+	collector.mu.Lock()
+	count := 0
+	for _, rawEnv := range collector.envs {
+		var head struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+		}
+		_ = json.Unmarshal(rawEnv, &head)
+		if head.Type == "event" && head.Name == protocol.EvApprovalResolved {
+			count++
+		}
+	}
+	collector.mu.Unlock()
+	if count != 1 {
+		t.Fatalf("approval.resolved emitted %d times, want exactly 1 (from the respond path)", count)
+	}
+}

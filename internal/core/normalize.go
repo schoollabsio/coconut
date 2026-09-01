@@ -152,6 +152,15 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 			// tool has now finished.
 			call.Status = status
 		}
+		// A tool call that ended can no longer be approved. If its approval
+		// is still pending (abort/cancel raced the dialog), auto-dismiss it
+		// so neither side keeps a zombie approval around.
+		if id, ok := e.dismissApprovalForToolCallLocked(m.ToolCallID); ok {
+			e.emitEvent(protocol.EvApprovalResolved, protocol.ApprovalResolvedPayload{
+				ApprovalID: id,
+				Decision:   protocol.DecisionDismiss,
+			}, "")
+		}
 		e.emitEvent(protocol.EvAgentToolCompleted, map[string]any{
 			"toolCallId": m.ToolCallID,
 			"toolName":   m.ToolName,
@@ -441,4 +450,27 @@ func (e *Engine) promoteShowContent(info toolStartInfo) {
 		e.state.content = &protocol.ContentDoc{Path: info.Path, Content: info.Content, UpdatedAt: nowMs()}
 		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
 	}
+}
+
+// dismissApprovalForToolCallLocked removes a pending approval bound to a
+// finished tool call. Returns the approval id if one was dismissed.
+// Actor-only.
+func (e *Engine) dismissApprovalForToolCallLocked(toolCallID string) (string, bool) {
+	if toolCallID == "" {
+		return "", false
+	}
+	for id, pend := range e.state.pendingByID {
+		if pend.toolCall != toolCallID {
+			continue
+		}
+		delete(e.state.pendingByID, id)
+		for i, a := range e.state.approvals {
+			if a.ID == id {
+				e.state.approvals = append(e.state.approvals[:i], e.state.approvals[i+1:]...)
+				break
+			}
+		}
+		return id, true
+	}
+	return "", false
 }

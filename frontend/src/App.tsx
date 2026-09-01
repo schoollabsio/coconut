@@ -84,7 +84,7 @@ export default function App() {
   return (
     // Content fills the whole window (hidden titlebar). The root is the
     // window drag region; interactive containers opt back out (no-drag).
-    <div className="drag-region h-full flex flex-col bg-surface">
+    <div className="drag-region h-full flex flex-col">
       <Header client={client} />
 
       {needsWorkspace ? (

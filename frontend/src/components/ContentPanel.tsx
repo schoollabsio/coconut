@@ -14,7 +14,9 @@ export function ContentPanel({ client }: { client: BackendClient }) {
   const pendingApprovals = useUIState((s) => s.pendingApprovals)
   const focusedApprovalId = useUIState((s) => s.focusedApprovalId)
 
-  const approval = pendingApprovals.find((a) => a.id === focusedApprovalId) ?? null
+  // Fall back to the first pending approval if focus dangles — a pending
+  // approval must always be visible.
+  const approval = pendingApprovals.find((a) => a.id === focusedApprovalId) ?? pendingApprovals[0] ?? null
 
   let dot = 'bg-raised'
   let fileLabel = content?.path ?? 'content.md'

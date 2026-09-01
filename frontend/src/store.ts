@@ -173,6 +173,12 @@ export class UIStore {
       },
       content: s.content,
       pendingApprovals: [...s.pendingApprovals],
+      // Reconcile focus against the authoritative list: a stale focus id
+      // (e.g. approval resolved while we were disconnected/resyncing)
+      // would otherwise block auto-focus of new approvals forever.
+      focusedApprovalId: s.pendingApprovals.some((a) => a.id === this.state.focusedApprovalId)
+        ? this.state.focusedApprovalId
+        : (s.pendingApprovals[0]?.id ?? null),
       settingsYaml: s.settingsYaml,
     })
   }
@@ -221,9 +227,14 @@ export class UIStore {
         const toolCalls = this.state.agent.toolCalls.map((c) =>
           c.id === this.findPendingToolCall(req) ? { ...c, status: 'pending_approval' as const, approvalId: req.id } : c,
         )
+        const pendingApprovals = [...this.state.pendingApprovals, req]
+        // Auto-focus the new approval unless the current focus is still a
+        // live pending approval (a dangling id must not block focus).
+        const cur = this.state.focusedApprovalId
+        const keepFocus = cur !== null && pendingApprovals.some((a) => a.id === cur)
         this.set({
-          pendingApprovals: [...this.state.pendingApprovals, req],
-          focusedApprovalId: this.state.focusedApprovalId ?? req.id,
+          pendingApprovals,
+          focusedApprovalId: keepFocus ? cur : req.id,
           agent: { ...this.state.agent, status: 'awaiting_approval', toolCalls },
         })
         break

@@ -73,8 +73,8 @@ export function Chat({ client }: { client: BackendClient }) {
             <span className="bg-gradient-to-br from-accent to-accenthover bg-clip-text text-transparent select-none mt-0.5">
               ✦
             </span>
-            <span className="text-dim text-xs italic">
-              {status === 'awaiting_approval' ? 'waiting for your approval…' : 'working…'}
+            <span className="text-dim text-xs italic subtle-pulse">
+              {status === 'awaiting_approval' ? 'waiting for your approval…' : 'Thinking…'}
             </span>
           </div>
         )}
