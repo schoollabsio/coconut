@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import { BackendClient } from '../backend'
 import { Cmd, type ApprovalRequest } from '../protocol'
 import { store, useUIState } from '../store'
@@ -68,6 +70,20 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
     void client.command(Cmd.ApprovalRespond, { approvalId: approval.id, decision })
   }
 
+  // Cmd+Return (or Ctrl+Return on non-Mac) approves the currently focused approval.
+  // Registered at the document level so it works regardless of which element has focus,
+  // consistent with SettingsModal's Escape-to-close pattern.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'Enter' || e.key === 'NumpadEnter')) {
+        e.preventDefault()
+        respond('allow')
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [approval.id, client])
+
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
       {approval.kind === 'propose_edit' ? (
@@ -128,6 +144,7 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
         </button>
         <button
           onClick={() => respond('allow')}
+          title="Approve (⌘+Return)"
           className="px-3 py-1.5 rounded-lg text-xs bg-ok hover:brightness-110 hover:bg-ok text-onaccent transition-colors"
         >
           Approve
