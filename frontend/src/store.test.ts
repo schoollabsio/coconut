@@ -121,8 +121,14 @@ describe('UIStore', () => {
     expect(s.state.focusedApprovalId).toBe('ap-1')
     expect(s.state.agent.status).toBe('awaiting_approval')
     expect(s.state.agent.toolCalls[0].status).toBe('pending_approval')
+    // what should be persisted on the tool call from the approval
+    expect(s.state.agent.toolCalls[0].what).toBe('w')
+    // After completion, what should still be present
+    s.applyBackendMessage(ev(4, Ev.AgentToolCompleted, { toolCallId: 'c1', status: 'done' }))
+    expect(s.state.agent.toolCalls[0].what).toBe('w')
+    expect(s.state.agent.toolCalls[0].status).toBe('done')
 
-    s.applyBackendMessage(ev(4, Ev.ApprovalResolved, { approvalId: 'ap-1', decision: 'allow' }))
+    s.applyBackendMessage(ev(5, Ev.ApprovalResolved, { approvalId: 'ap-1', decision: 'allow' }))
     expect(s.state.pendingApprovals).toHaveLength(0)
     expect(s.state.focusedApprovalId).toBeNull()
     expect(s.state.agent.status).toBe('thinking')

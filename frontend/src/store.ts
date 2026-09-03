@@ -225,7 +225,7 @@ export class UIStore {
       case Ev.ApprovalRequested: {
         const req = p as unknown as ApprovalRequest
         const toolCalls = this.state.agent.toolCalls.map((c) =>
-          c.id === this.findPendingToolCall(req) ? { ...c, status: 'pending_approval' as const, approvalId: req.id } : c,
+          c.id === this.findPendingToolCall(req) ? { ...c, status: 'pending_approval' as const, approvalId: req.id, what: req.what } : c,
         )
         const pendingApprovals = [...this.state.pendingApprovals, req]
         // Auto-focus the new approval unless the current focus is still a
