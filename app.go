@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/jschool/custard/internal/core"
-	"github.com/jschool/custard/internal/piadapter"
+	"github.com/jschool/coconut/internal/core"
+	"github.com/jschool/coconut/internal/piadapter"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -42,7 +42,7 @@ func (a *App) startup(ctx context.Context) {
 		Emit:          a.emit,
 	})
 	if err != nil {
-		log.Printf("custard: engine init failed: %v", err)
+		log.Printf("coconut: engine init failed: %v", err)
 		return
 	}
 	a.engine = engine
@@ -107,7 +107,7 @@ func (a *App) emit(env any) {
 	}
 	b, err := json.Marshal(env)
 	if err != nil {
-		log.Printf("custard: marshal envelope: %v", err)
+		log.Printf("coconut: marshal envelope: %v", err)
 		return
 	}
 	runtime.EventsEmit(a.ctx, "backend", string(b))
@@ -129,29 +129,29 @@ func selfPath() string {
 	return p
 }
 
-// resolveExtensionPath locates pi-extension/custard.ts:
-//  1. CUSTARD_EXTENSION env override
+// resolveExtensionPath locates pi-extension/coconut.ts:
+//  1. COCONUT_EXTENSION env override
 //  2. next to the resolved sidecar binary (packaged builds)
-//  3. repo layout: <repo>/pi-extension/custard.ts relative to the
+//  3. repo layout: <repo>/pi-extension/coconut.ts relative to the
 //     dev binary in build/bin/
 func resolveExtensionPath() string {
-	if p := os.Getenv("CUSTARD_EXTENSION"); p != "" {
+	if p := os.Getenv("COCONUT_EXTENSION"); p != "" {
 		return p
 	}
 	if bin := piadapter.ResolveBinary(selfPath()); bin != "pi" {
-		p := filepath.Join(filepath.Dir(bin), "custard-extension.ts")
+		p := filepath.Join(filepath.Dir(bin), "coconut-extension.ts")
 		if fileExists(p) {
 			return p
 		}
 	}
 	if exe := selfPath(); exe != "" {
-		// build/bin/custard → <repo>/pi-extension/custard.ts
-		p := filepath.Join(filepath.Dir(exe), "..", "..", "pi-extension", "custard.ts")
+		// build/bin/coconut → <repo>/pi-extension/coconut.ts
+		p := filepath.Join(filepath.Dir(exe), "..", "..", "pi-extension", "coconut.ts")
 		if abs, err := filepath.Abs(p); err == nil && fileExists(abs) {
 			return abs
 		}
 	}
-	return "custard.ts" // last resort; pi will error visibly
+	return "coconut.ts" // last resort; pi will error visibly
 }
 
 func fileExists(p string) bool {

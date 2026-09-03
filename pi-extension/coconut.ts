@@ -1,18 +1,18 @@
 /**
- * Custard pi extension
+ * Coconut pi extension
  *
- * Agent-side enforcement + tooling layer for the Custard desktop app.
- * Custard runs the real `pi` coding agent as an RPC sidecar:
+ * Agent-side enforcement + tooling layer for the Coconut desktop app.
+ * Coconut runs the real `pi` coding agent as an RPC sidecar:
  *
- *   pi --mode rpc --no-extensions -e custard.ts \
- *      --tools read,bash,grep,find,ls,propose_edit,show_content
+ *   pi --mode rpc --no-extensions -e coconut.ts \
+ *      --tools read,run,grep,find,ls,propose_edit,show_content
  *
  * The Go backend renders its own UI and talks to pi over JSONL RPC, so ALL
  * user interaction here goes through the RPC-bridged extension-UI protocol
  * (ctx.ui.confirm → `extension_ui_request` / `extension_ui_response`).
  *
  * Approval wire contract (parsed by the Go backend — do not change lightly):
- *   - title:   "custard://propose_edit" | "custard://bash"
+ *   - title:   "coconut://propose_edit" | "coconut://run"
  *   - message: stringified JSON including the pi toolCallId
  *   - reply:   extension_ui_response with { confirmed: true } approves;
  *              { confirmed: false } or { cancelled: true } dismisses/blocks.
@@ -25,11 +25,13 @@
  *      OUTSIDE the workspace so it can never create/modify project files.
  *      Mode B (file): render an existing file read directly from disk.
  *      Read-only in both modes.
- *   3. tool_call hook gating `bash` behind a read-only whitelist + approval,
- *      and hard-blocking built-in edit/write/apply_patch if a pi build ever
- *      activates them despite --tools.
- *   4. before_agent_start — appends "Custard environment" system-prompt guidance.
- *   5. project_trust — always "no": the app isolates the agent from
+ *   3. run tool — replaces the built-in bash tool with a registered tool that
+ *      requires what/why; whitelisted commands run without approval, others
+ *      open the coconut://run approval dialog.
+ *   4. tool_call hook hard-blocking built-in edit/write/apply_patch if a pi
+ *      build ever activates them despite --tools.
+ *   5. before_agent_start — appends "Coconut environment" system-prompt guidance.
+ *   6. project_trust — always "no": the app isolates the agent from
  *      project-local pi settings/extensions.
  */
 
@@ -38,6 +40,8 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { type ExtensionAPI, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -67,6 +71,17 @@ const ShowContentParamsSchema = Type.Object({
 	content: Type.String({ description: "Full document content (usually Markdown)." }),
 });
 export type ShowContentParams = Static<typeof ShowContentParamsSchema>;
+
+const RunParamsSchema = Type.Object({
+	command: Type.String({ description: "Shell command to execute." }),
+	what: Type.String({
+		description: "Short summary of what this command does (shown to the user for approval).",
+	}),
+	why: Type.String({
+		description: "Rationale for why this command is needed (shown to the user for approval).",
+	}),
+});
+export type RunParams = Static<typeof RunParamsSchema>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -105,7 +120,20 @@ function preview(s: string, max = 80): string {
 	return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
 }
 
-// show_content stages documents here — inside pi's agent dir, which custard
+// Check whether a command is safe to run without approval (all segments
+// are non-dangerous and whitelisted).
+function isWhitelistedCommand(command: string, bashWhitelist: string[]): boolean {
+	for (const rawSegment of splitSegments(command)) {
+		const seg = rawSegment.trim();
+		if (seg === "") continue;
+		if (isDangerousSegment(seg) || !isWhitelistedSegment(seg, bashWhitelist)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// show_content stages documents here — inside pi's agent dir, which coconut
 // sets to its own isolated config dir — so the ungated render channel can
 // never write into the user's project.
 const CONTENT_STAGING = join(process.env.PI_CODING_AGENT_DIR ?? tmpdir(), "content");
@@ -187,23 +215,26 @@ function isDangerousSegment(seg: string): boolean {
 	return false;
 }
 
+const execAsync = promisify(exec);
+
 // ---------------------------------------------------------------------------
 // System-prompt guidance
 // ---------------------------------------------------------------------------
 
-const CUSTARD_GUIDANCE = `## Custard environment
+const COCONUT_GUIDANCE = `## Coconut environment
 
-You are running inside the Custard desktop app. Its environment differs from a stock pi setup:
+You are running inside the Coconut desktop app. Its environment differs from a stock pi setup:
 
 - The built-in \`edit\` and \`write\` tools do NOT exist here. The ONLY way to create or modify files is the \`propose_edit\` tool.
 - \`propose_edit\` blocks on explicit user approval before anything is written, so:
-  - Gather context first with \`read\`, \`grep\`, \`find\`, \`ls\` (and read-only \`bash\` commands) before proposing a change.
+  - Gather context first with \`read\`, \`grep\`, \`find\`, \`ls\` (and read-only \`run\` commands) before proposing a change.
   - Propose complete, well-formed edits: every \`oldText\` must match the file's current content exactly, and give each proposal a clear \`what\` and \`why\` — the user reads them when deciding.
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
 - Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
 - When the user asks to be SHOWN something ("show me…", "let me see…", "display…") — or your reply would be a long document, table, list, or code block — render it with \`show_content\` instead of stating it inline. To show an existing file, pass \`file\` (you do not need to reproduce its contents); to render a document you compose, pass \`path\` + \`content\`. Keep the chat reply itself short (a sentence pointing at the panel); the panel is the reading surface, chat is the conversation.
-- \`bash\` commands outside a read-only whitelist require user approval and anything destructive is always gated. Prefer read-only commands so your work is not interrupted.`;
+- \`run\` is the shell-command tool (replacing \`bash\`). It requires \`what\` and \`why\` arguments so the user can approve commands with context. Whitelisted commands (ls, grep, cat, git status, etc.) run without approval; anything else opens an approval dialog.
+`;
 
 // ---------------------------------------------------------------------------
 // Extension
@@ -211,7 +242,7 @@ You are running inside the Custard desktop app. Its environment differs from a s
 
 export default function (pi: ExtensionAPI) {
 	// Extra comma-separated bash whitelist prefixes from the environment.
-	const extraWhitelist = (process.env.CUSTARD_BASH_WHITELIST ?? "")
+	const extraWhitelist = (process.env.COCONUT_BASH_WHITELIST ?? "")
 		.split(",")
 		.map((s) => s.trim())
 		.filter((s) => s.length > 0);
@@ -240,7 +271,7 @@ export default function (pi: ExtensionAPI) {
 			// Queue the entire read → confirm → apply → write window on the target
 			// path so parallel tool calls cannot interleave mutations of one file.
 			// (The per-file lock is held while the user decides; acceptable here
-			// because approvals are the serialization point Custard wants anyway.)
+			// because approvals are the serialization point Coconut wants anyway.)
 			return withFileMutationQueue(absPath, async () => {
 				const wholeFile = edits.length === 1 && edits[0].oldText === "";
 
@@ -282,7 +313,7 @@ export default function (pi: ExtensionAPI) {
 				// Approval gate — wire contract with the Go backend. No timeout:
 				// the request stays open until the user decides.
 				const approved = await ctx.ui.confirm(
-					"custard://propose_edit",
+					"coconut://propose_edit",
 					JSON.stringify({ toolCallId, path, what, why, edits }),
 				);
 
@@ -367,10 +398,74 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// -----------------------------------------------------------------------
-	// 3. Bash gating
+	// 3. run — approval-gated shell command
 	// -----------------------------------------------------------------------
 
-	pi.on("tool_call", async (event, ctx) => {
+	pi.registerTool({
+		name: "run",
+		label: "Run",
+		description:
+			"Run a shell command. Whitelisted read-only commands (ls, grep, cat, git status, etc.) execute without approval; anything else opens the coconut://run approval dialog. Built-in bash is not available; use this tool instead.",
+		promptSnippet: "Run a shell command (approval-gated for non-whitelisted commands)",
+		promptGuidelines: [
+			"Use `run` for shell commands. Whitelisted read-only commands run without approval; others open an approval dialog.",
+			"Always provide a clear `what` (what the command does) and `why` (why it's needed) so the user can approve with context.",
+		],
+		parameters: RunParamsSchema,
+		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+			const { command, what, why } = params;
+
+			if (!isWhitelistedCommand(command, bashWhitelist)) {
+				// Wire contract with the Go backend (see file header). No timeout.
+				const approved = await ctx.ui.confirm(
+					"coconut://run",
+					JSON.stringify({ toolCallId, command, what, why }),
+				);
+				if (!approved) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: "The user dismissed this command without approving it. Do NOT retry the same command; the user will follow up in chat with what to change.",
+							},
+						],
+						details: { command, approved: false },
+					};
+				}
+			}
+
+			// Execute the command via Node's child_process. execAsync resolves
+			// with { stdout, stderr } on success or rejects on non-zero exit.
+			let stdout = "";
+			let stderr = "";
+			let exitCode = 0;
+			try {
+				const result = await execAsync(command, { cwd: ctx.cwd });
+				stdout = result.stdout;
+				stderr = result.stderr;
+			} catch (err: any) {
+				stdout = err.stdout ?? "";
+				stderr = err.stderr ?? "";
+				exitCode = typeof err.code === "number" ? err.code : 1;
+			}
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: `Command: ${command}\n\n${stdout}${stderr ? `\n[stderr]\n${stderr}` : ""}\n\nExit code: ${exitCode}`,
+					},
+				],
+				details: { command, exitCode, approved: true },
+			};
+		},
+	});
+
+	// -----------------------------------------------------------------------
+	// 4. tool_call hook — hard-block built-in file tools
+	// -----------------------------------------------------------------------
+
+	pi.on("tool_call", async (event) => {
 		// Hard-block built-in file-mutation tools if a pi build ever activates
 		// them despite the --tools allowlist: propose_edit is the only
 		// sanctioned file-mutation channel.
@@ -382,47 +477,22 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
-		if (event.toolName !== "bash") return undefined;
-
-		const command = (event.input as { command?: unknown }).command;
-		if (typeof command !== "string" || command.trim() === "") return undefined;
-
-		let needsApproval = false;
-		for (const rawSegment of splitSegments(command)) {
-			const seg = rawSegment.trim();
-			if (seg === "") continue;
-			// Dangerous segments ALWAYS gate, even with "*" in the whitelist.
-			if (isDangerousSegment(seg) || !isWhitelistedSegment(seg, bashWhitelist)) {
-				needsApproval = true;
-				break;
-			}
-		}
-
-		if (!needsApproval) return undefined; // fully whitelisted → allow silently
-
-		// Wire contract with the Go backend (see file header). No timeout.
-		const ok = await ctx.ui.confirm(
-			"custard://bash",
-			JSON.stringify({ toolCallId: event.toolCallId, command }),
-		);
-		if (ok) return undefined; // approved → fall through, let bash run
-
-		return { block: true, reason: "User declined this command; they may follow up in chat." };
+		return undefined;
 	});
 
 	// -----------------------------------------------------------------------
-	// 4. System-prompt guidance
+	// 5. System-prompt guidance
 	// -----------------------------------------------------------------------
 
 	pi.on("before_agent_start", async (event) => {
-		return { systemPrompt: `${event.systemPrompt}\n\n${CUSTARD_GUIDANCE}` };
+		return { systemPrompt: `${event.systemPrompt}\n\n${COCONUT_GUIDANCE}` };
 	});
 
 	// -----------------------------------------------------------------------
-	// 5. Project trust
+	// 6. Project trust
 	// -----------------------------------------------------------------------
 
-	// Custard deliberately isolates the agent from project-local pi settings,
+	// Coconut deliberately isolates the agent from project-local pi settings,
 	// extensions, and skills (.pi/, .agents/) — untrusted repo content must not
 	// be able to weaken the app's approval gates — so trust is always "no".
 	pi.on("project_trust", async () => ({ trusted: "no" }));

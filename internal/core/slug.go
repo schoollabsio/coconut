@@ -12,7 +12,7 @@ import (
 // Agents are persistent, workspace-scoped identities; each owns a run of pi
 // sessions:
 //
-//	<workspace>/.custard/agents/<agent-slug>/sessions/<pi-timestamp>_<uuid>.jsonl
+//	<workspace>/.coconut/agents/<agent-slug>/sessions/<pi-timestamp>_<uuid>.jsonl
 //
 // The slug derives from the user-entered agent name ("Frontend Agent" →
 // "frontend-agent"). Renames update the live session immediately (via pi's
@@ -59,14 +59,14 @@ func humanizeSlug(slug string) string {
 
 // agentDirFor returns the agent's root dir; sessionsDirFor its --session-dir.
 func agentDirFor(workspace, slug string) string {
-	return filepath.Join(workspace, ".custard", "agents", slug)
+	return filepath.Join(workspace, ".coconut", "agents", slug)
 }
 
 func sessionsDirFor(workspace, slug string) string {
 	return filepath.Join(agentDirFor(workspace, slug), "sessions")
 }
 
-// ensureAgentDir creates the agent's sessions dir and a .custard/.gitignore
+// ensureAgentDir creates the agent's sessions dir and a .coconut/.gitignore
 // that keeps transcripts out of accidental commits (the ignore file itself
 // stays committable).
 func ensureAgentDir(workspace, slug string) (string, error) {
@@ -74,7 +74,7 @@ func ensureAgentDir(workspace, slug string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	ignore := filepath.Join(workspace, ".custard", ".gitignore")
+	ignore := filepath.Join(workspace, ".coconut", ".gitignore")
 	if _, err := os.Stat(ignore); os.IsNotExist(err) {
 		if err := os.WriteFile(ignore, []byte("*\n!.gitignore\n"), 0o644); err != nil {
 			return "", err
@@ -113,14 +113,14 @@ func applyPendingRename(workspace, slug string, a *agentState) string {
 }
 
 // adoptLegacySessionFile moves a transcript that lives OUTSIDE the
-// workspace's .custard/agents tree (e.g. in the pre-workspace-storage global
+// workspace's .coconut/agents tree (e.g. in the pre-workspace-storage global
 // sessions dir) into the agent's sessions dir at launch time, before pi has
 // it open.
 func adoptLegacySessionFile(workspace, slug string, a *agentState) {
 	if a.LastSessionFile == "" || !fileExists(a.LastSessionFile) {
 		return
 	}
-	root := filepath.Join(workspace, ".custard", "agents") + string(filepath.Separator)
+	root := filepath.Join(workspace, ".coconut", "agents") + string(filepath.Separator)
 	if strings.HasPrefix(a.LastSessionFile, root) {
 		return // already inside the workspace
 	}
@@ -134,10 +134,10 @@ func adoptLegacySessionFile(workspace, slug string, a *agentState) {
 }
 
 // migrateLegacyLayout upgrades the pre-agents layout
-// (.custard/sessions/<slug>/*.jsonl) to .custard/agents/<slug>/sessions/.
+// (.coconut/sessions/<slug>/*.jsonl) to .coconut/agents/<slug>/sessions/.
 // Idempotent; collisions leave the legacy dir untouched.
 func migrateLegacyLayout(workspace string) {
-	legacyRoot := filepath.Join(workspace, ".custard", "sessions")
+	legacyRoot := filepath.Join(workspace, ".coconut", "sessions")
 	entries, err := os.ReadDir(legacyRoot)
 	if err != nil {
 		return

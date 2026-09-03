@@ -35,7 +35,7 @@ echo "bundling pi $VERSION from $PI_PKG"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-bun build --compile "$PI_PKG/dist/cli.js" --outfile "$OUT_DIR/custard-pi"
+bun build --compile "$PI_PKG/dist/cli.js" --outfile "$OUT_DIR/coconut-pi"
 
 # Runtime assets expected next to the binary (pi getPackageDir() convention).
 cp -r "$PI_PKG/dist/modes/interactive/theme" "$OUT_DIR/theme"
@@ -46,7 +46,7 @@ cp "$PI_PKG/package.json" "$OUT_DIR/package.json"
 [[ -f "$PI_PKG/CHANGELOG.md" ]] && cp "$PI_PKG/CHANGELOG.md" "$OUT_DIR/CHANGELOG.md"
 
 # Our extension travels with the sidecar.
-cp "$ROOT/pi-extension/custard.ts" "$OUT_DIR/custard-extension.ts" 2>/dev/null || true
+cp "$ROOT/pi-extension/coconut.ts" "$OUT_DIR/coconut-extension.ts" 2>/dev/null || true
 
 echo "sidecar staged at $OUT_DIR"
 ls -la "$OUT_DIR"

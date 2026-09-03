@@ -1,4 +1,4 @@
-module github.com/jschool/custard
+module github.com/jschool/coconut
 
 go 1.26
 

@@ -1,44 +1,69 @@
 @import "tailwindcss";
 
-/* Palette (warm dark): canonical tokens, also exposed for direct CSS use. */
+/* Palette (Coconut): canonical tokens, also exposed for direct CSS use. */
 :root {
-  --bg: #0a0a0c;
-  --surface: #101012;
-  --surface-2: #211D18;
-  --border: #2E2820;
-  --text: #ffffff;
-  --muted: #B8AC97;
-  --accent: #E4B85F;
-  --accent-hover: #F2CD7F;
-  --accent-soft: rgba(228, 184, 95, 0.12);
-  --success: #8BB88A;
-  --warning: #E08A4B;
-  --danger: #D96357;
-  --info: #7FA8C9;
+  /* Backgrounds */
+  --bg: #0E0F11;          /* Background */
+  --inset: #0A0B0C;       /* Inset background — code wells, terminal, recessed areas */
+  --surface: #15171A;     /* Subtle background — panels, sidebars, cards */
+  --surface-2: #1C1F24;   /* Muted background — hover surfaces, raised panels */
+  --border: #262A30;      /* Border */
+
+  /* Text */
+  --text: #FFFFFF;        /* Primary text */
+  --muted: #C9CED6;       /* Secondary text */
+  --dim: #8C939C;         /* Muted text */
+  --faint: #5B626B;       /* Disabled text */
+
+  /* Green accent (leafy) */
+  --accent: #58C97E;                       /* Leafy green accent */
+  --accent-hover: #71E19B;                /* Green hover */
+  --accent-soft: rgba(88, 201, 126, 0.14); /* Green soft background */
+  --green-pressed: #3EA965;              /* Pressed / active fill */
+  --focus-ring: rgba(88, 201, 126, 0.38); /* Focus rings, active glow */
+
+  /* Brown / husk (secondary accent) */
+  --brown: #A9784F;                       /* Medium brown */
+  --brown-bright: #C69A72;               /* Bright brown */
+  --brown-deep: #6F4F36;                 /* Deep brown */
+  --brown-soft: rgba(169, 120, 79, 0.14); /* Brown soft background */
+  --brown-border: rgba(169, 120, 79, 0.35); /* Brown border */
+
+  /* Status */
+  --success: #4FBE74;   /* Success (calmer variant) */
+  --warning: #D9A05B;   /* Warning / husk */
+  --danger: #E06458;    /* Danger / errors */
+  --info: #7BA6C8;      /* Info / neutral */
 }
 
-/* Tailwind v4 theme: semantic utilities (bg-base, text-mute, …).
-   raised/linestrong/dim/faint are interpolations of the palette for
-   hover fills, stronger borders, and tertiary text. */
+/* Tailwind v4 theme: semantic utilities (bg-base, text-mute, …). */
 @theme {
-  --color-base: #0a0a0c;
-  --color-onaccent: #101012;
-  --color-surface: #1a1713;
-  --color-surface2: #211d18;
-  --color-raised: #2e2820;
-  --color-line: #2e2820;
-  --color-linestrong: #3b3327;
-  --color-ink: #ffffff;
-  --color-mute: #b8ac97;
-  --color-dim: #8a7f6b;
-  --color-faint: #6e6455;
-  --color-accent: #e4b85f;
-  --color-accenthover: #f2cd7f;
-  --color-accentsoft: rgb(228 184 95 / 0.12);
-  --color-ok: #8bb88a;
-  --color-warn: #e08a4b;
-  --color-danger: #d96357;
-  --color-info: #7fa8c9;
+  --color-base: #0E0F11;
+  --color-inset: #0A0B0C;
+  --color-onaccent: #0A0B0C;
+  --color-surface: #15171A;
+  --color-surface2: #1C1F24;
+  --color-raised: #262A30;
+  --color-line: #262A30;
+  --color-linestrong: #3B4148;
+  --color-ink: #FFFFFF;
+  --color-mute: #C9CED6;
+  --color-dim: #8C939C;
+  --color-faint: #5B626B;
+  --color-accent: #58C97E;
+  --color-accenthover: #71E19B;
+  --color-accentsoft: rgb(88 201 126 / 0.14);
+  --color-greenpressed: #3EA965;
+  --color-focusring: rgb(88 201 126 / 0.38);
+  --color-brown: #A9784F;
+  --color-brownbright: #C69A72;
+  --color-browndeep: #6F4F36;
+  --color-brownsoft: rgb(169 120 79 / 0.14);
+  --color-brownborder: rgb(169 120 79 / 0.35);
+  --color-ok: #4FBE74;
+  --color-warn: #D9A05B;
+  --color-danger: #E06458;
+  --color-info: #7BA6C8;
 }
 
 html, body, #root {
@@ -52,7 +77,7 @@ html, body, #root {
 }
 
 ::selection {
-  background: rgba(228, 184, 95, 0.28);
+  background: rgba(88, 201, 126, 0.28);
 }
 
 /* macOS hidden-titlebar integration: the header row acts as the window

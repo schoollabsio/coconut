@@ -1,4 +1,4 @@
-# custard
+# coconut
 
 A desktop coding-agent app: chat with an agent that works in a folder you
 choose, watch its tool calls live, and approve every file edit before it
@@ -10,12 +10,12 @@ Architecture (see PLAN.md for the full spec):
 ┌──────────────┐   JSONL RPC   ┌───────────────┐   Wails IPC   ┌──────────────┐
 │ pi sidecar   │ ◄───────────► │ Go backend    │ ◄───────────► │ React UI     │
 │ (agent loop) │               │ (actor, seq,  │               │ (UI store,   │
-│ + custard.ts │               │  snapshots)   │               │  components) │
+│ + coconut.ts │               │  snapshots)   │               │  components) │
 └──────────────┘               └───────────────┘               └──────────────┘
 ```
 
 - **pi sidecar** — the real `pi` agent in `--mode rpc`, launched with an
-  isolated config dir and our extension (`pi-extension/custard.ts`), which
+  isolated config dir and our extension (`pi-extension/coconut.ts`), which
   registers the `propose_edit` / `show_content` tools and gates bash
   commands behind approvals (with a whitelist).
 - **Go backend** (`internal/core`, `internal/piadapter`) — owns domain
@@ -33,18 +33,18 @@ Requires Go ≥ 1.24, Node ≥ 20, Bun, and the wails CLI
 ```bash
 # 1. Token-free development against the scripted fake sidecar:
 go build -o build/bin/fakepi ./cmd/fakepi
-export CUSTARD_PI_BINARY="$PWD/build/bin/fakepi"
-export CUSTARD_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
+export COCONUT_PI_BINARY="$PWD/build/bin/fakepi"
+export COCONUT_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
 wails dev
 
 # 2. Against the real pi (uses your system `pi`; the app's isolated
 #    config means you enter an API key in the settings modal once):
-unset CUSTARD_PI_BINARY CUSTARD_PI_SCENARIO
+unset COCONUT_PI_BINARY COCONUT_PI_SCENARIO
 wails dev
 ```
 
-Useful env overrides: `CUSTARD_CONFIG_DIR` (app config location),
-`CUSTARD_EXTENSION` (extension path), `CUSTARD_BASH_WHITELIST` (extra
+Useful env overrides: `COCONUT_CONFIG_DIR` (app config location),
+`COCONUT_EXTENSION` (extension path), `COCONUT_BASH_WHITELIST` (extra
 bash prefixes, comma-separated).
 
 ## Test
@@ -58,9 +58,9 @@ cd frontend && npx vitest run   # UI store tests
 
 ```bash
 scripts/package.sh     # wails build + bun-compiled pi sidecar + codesign (ad-hoc)
-open build/bin/custard.app
+open build/bin/coconut.app
 ```
 
 The packaged app is self-contained: the pi sidecar (single ~70MB binary
-plus its `theme/` etc. assets) and the custard extension sit next to the
+plus its `theme/` etc. assets) and the coconut extension sit next to the
 app binary inside the bundle.

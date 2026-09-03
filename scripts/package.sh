@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# package.sh — produce a self-contained macOS custard.app:
+# package.sh — produce a self-contained macOS coconut.app:
 #   1. wails build (compiles Go + embeds frontend/dist)
 #   2. scripts/build-sidecar.sh (bun-compiles pi + stages assets)
 #   3. copy the sidecar payload next to the app binary
@@ -15,7 +15,7 @@ wails build
 
 "$ROOT/scripts/build-sidecar.sh" "$@"
 
-MACOS_DIR="$ROOT/build/bin/custard.app/Contents/MacOS"
+MACOS_DIR="$ROOT/build/bin/coconut.app/Contents/MacOS"
 if [[ ! -d "$MACOS_DIR" ]]; then
   echo "error: $MACOS_DIR not found (did wails build succeed?)" >&2
   exit 1
@@ -25,6 +25,6 @@ cp -R "$ROOT/build/sidecar/." "$MACOS_DIR/"
 
 # Re-sign after mutating the bundle (ad-hoc; replace with a real identity
 # for distribution).
-codesign --force --deep --sign - "$ROOT/build/bin/custard.app" 2>/dev/null || true
+codesign --force --deep --sign - "$ROOT/build/bin/coconut.app" 2>/dev/null || true
 
-echo "packaged: $ROOT/build/bin/custard.app (sidecar embedded)"
+echo "packaged: $ROOT/build/bin/coconut.app (sidecar embedded)"

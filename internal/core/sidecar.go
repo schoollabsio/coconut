@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jschool/custard/internal/piadapter"
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // ---------------------------------------------------------------------------
@@ -217,16 +217,16 @@ func (e *Engine) onSidecarGone(err error) {
 func buildLaunchSpec(cfg EngineConfig, s Settings, agentName, workspace, sessionDir string) piadapter.LaunchSpec {
 	agentDir := filepath.Join(cfg.ConfigDir, "agent")
 
-	binary := os.Getenv("CUSTARD_PI_BINARY")
+	binary := os.Getenv("COCONUT_PI_BINARY")
 	if binary == "" {
 		binary = piadapter.ResolveBinary(cfg.SelfPath)
 	}
 
-	// fakepi development seam: CUSTARD_PI_BINARY points at a fakepi
+	// fakepi development seam: COCONUT_PI_BINARY points at a fakepi
 	// build; it takes -scenario instead of pi's flags.
 	if strings.Contains(filepath.Base(binary), "fakepi") {
 		args := []string{}
-		if sc := os.Getenv("CUSTARD_PI_SCENARIO"); sc != "" {
+		if sc := os.Getenv("COCONUT_PI_SCENARIO"); sc != "" {
 			args = append(args, "-scenario", sc)
 		}
 		return piadapter.LaunchSpec{Binary: binary, Args: args, Dir: workspace}

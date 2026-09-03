@@ -237,7 +237,7 @@ const (
 
 type ToolCall struct {
 	ID         string `json:"id"`
-	Tool       string `json:"tool"`           // pi toolName: read, bash, propose_edit, show_content, …
+	Tool       string `json:"tool"`           // pi toolName: read, run, propose_edit, show_content, …
 	Label      string `json:"label"`          // display line, e.g. "Read App.tsx"
 	Path       string `json:"path,omitempty"` // primary file, if any
 	Status     string `json:"status"`

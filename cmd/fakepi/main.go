@@ -1,5 +1,5 @@
 // Command fakepi is a scripted, wire-compatible stand-in for
-// `pi --mode rpc`, used by custard development and integration tests
+// `pi --mode rpc`, used by coconut development and integration tests
 // to exercise the full backend without making LLM calls.
 //
 // It reads JSONL commands on stdin and writes JSONL responses/events

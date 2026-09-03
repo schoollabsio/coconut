@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/jschool/custard/internal/piadapter"
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // feedNorm pushes raw pi events straight through the normalizer.
@@ -176,7 +176,7 @@ func TestToolEndDismissesPendingApproval(t *testing.T) {
 	engine.state.workspacePath = t.TempDir()
 
 	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc-9","toolName":"propose_edit","args":{"path":"a.md"}}`)
-	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"custard://propose_edit","message":"{\"toolCallId\":\"tc-9\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
+	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"coconut://propose_edit","message":"{\"toolCallId\":\"tc-9\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
 	if len(engine.state.approvals) != 1 {
 		t.Fatalf("approval not registered: %+v", engine.state.approvals)
 	}
@@ -211,7 +211,7 @@ func TestApprovedToolEndDoesNotDoubleResolve(t *testing.T) {
 	go engine.Run(t.Context())
 
 	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc-1","toolName":"propose_edit","args":{"path":"a.md"}}`)
-	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"custard://propose_edit","message":"{\"toolCallId\":\"tc-1\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
+	feedNorm(engine, "extension_ui_request", `{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"coconut://propose_edit","message":"{\"toolCallId\":\"tc-1\",\"path\":\"a.md\",\"what\":\"w\",\"why\":\"y\",\"edits\":[{\"oldText\":\"\",\"newText\":\"x\"}]}"}`)
 	apID := engine.state.approvals[0].ID
 
 	// User approves (respond path removes the pending entry)…

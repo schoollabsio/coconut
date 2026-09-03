@@ -1,5 +1,5 @@
 # Technical Specification  
-## Go-based Coding Agent Desktop Application (Custard)
+## Go-based Coding Agent Desktop Application (Coconut)
 
 ## 1. Introduction
 

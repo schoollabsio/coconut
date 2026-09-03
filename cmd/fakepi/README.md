@@ -1,7 +1,7 @@
 # fakepi
 
 `fakepi` is a scripted, wire-compatible stand-in for `pi --mode rpc`. It
-lets custard's Go backend (and integration tests) exercise the full
+lets coconut's Go backend (and integration tests) exercise the full
 JSONL protocol — streaming deltas, tool events, and the approval
 sub-protocol — without making LLM calls.
 
@@ -31,7 +31,7 @@ Paste commands into stdin, one per line:
 Every command gets exactly one `{"type":"response",...}` envelope,
 echoing `id` when present. Supported: `prompt`, `steer`, `follow_up`,
 `abort`, `new_session`, `get_state`, `get_messages`, `set_session_name`,
-`get_session_stats`, `get_commands`, `bash`, plus the stdin side of
+`get_session_stats`, `get_commands`, `run`, plus the stdin side of
 `extension_ui_response`. Anything else returns `success:false`.
 
 A prompt (or steer/follow_up) that does not match the scenario's current
@@ -87,12 +87,12 @@ need deltas, and `get_messages` returns sane `AgentMessage` shapes.
 
 ## Approval wire contract
 
-All custard edits go through the `propose_edit` tool, which blocks on
+All coconut edits go through the `propose_edit` tool, which blocks on
 approval via pi's extension UI sub-protocol:
 
 1. stdout: `tool_execution_start` for `propose_edit` with the full args.
 2. stdout: an `extension_ui_request` event —
-   `{"type":"extension_ui_request","id":"appr_N","method":"confirm","title":"custard://propose_edit","message":"<stringified JSON>"}`
+   `{"type":"extension_ui_request","id":"appr_N","method":"confirm","title":"coconut://propose_edit","message":"<stringified JSON>"}`
    where `message` is a JSON **string** containing
    `{toolCallId, path, what, why, edits:[{oldText,newText}]}`.
 3. stdin: the client answers
@@ -104,3 +104,20 @@ approval via pi's extension UI sub-protocol:
    dismiss.
 
 `show_content` (and `read`) complete without approval.
+
+### Shell command approval (coconut://run)
+
+Non-whitelisted `run` tool calls block on approval via pi's extension UI
+ sub-protocol:
+
+1. stdout: `tool_execution_start` for `run` with `{command, what, why}`.
+2. stdout: an `extension_ui_request` event —
+   `{"type":"extension_ui_request","id":"appr_N","method":"confirm","title":"coconut://run","message":"<stringified JSON>"}`
+   where `message` is a JSON **string** containing
+   `{toolCallId, command, what, why}`.
+3. stdin: the client answers
+   `{"type":"extension_ui_response","id":"appr_N","confirmed":true}` to
+   approve, or `{"...","cancelled":true}` to dismiss.
+4. stdout: `tool_execution_end` for the tool call — the command output
+   (with stdout/stderr/exit code) on approve, or a non-error result with
+   text `"The user dismissed this command..."` on dismiss.

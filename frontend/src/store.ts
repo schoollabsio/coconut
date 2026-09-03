@@ -318,7 +318,7 @@ export class UIStore {
   private findPendingToolCall(req: ApprovalRequest): string | undefined {
     // The tool call that requested this approval is the most recent
     // running call of the matching kind.
-    const want = req.kind === 'bash' ? 'bash' : 'propose_edit'
+    const want = req.kind === 'bash' ? 'run' : 'propose_edit'
     for (let i = this.state.agent.toolCalls.length - 1; i >= 0; i--) {
       const c = this.state.agent.toolCalls[i]
       if (c.tool === want && c.status === 'running') return c.id

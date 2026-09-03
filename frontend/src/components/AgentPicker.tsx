@@ -41,7 +41,7 @@ export function AgentPicker({ client }: { client: BackendClient }) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-base/70"
       onClick={() => store.closeAgentPicker()}
     >
       <div

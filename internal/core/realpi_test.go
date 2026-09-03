@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // TestRealPiApprovalProbe drives the REAL bundled pi sidecar end-to-end:
@@ -16,12 +16,12 @@ import (
 // approval → approve → file modified. This is the round trip the GUI
 // depends on; fakepi cannot catch extension/RPC drift in real pi.
 //
-// Gated: CUSTARD_TEST_REAL_PI=1. Provider credentials come from the
-// user's real custard settings.yaml (copied into an isolated temp config
+// Gated: COCONUT_TEST_REAL_PI=1. Provider credentials come from the
+// user's real coconut settings.yaml (copied into an isolated temp config
 // dir — their app state is never touched).
 func TestRealPiApprovalProbe(t *testing.T) {
-	if os.Getenv("CUSTARD_TEST_REAL_PI") != "1" {
-		t.Skip("set CUSTARD_TEST_REAL_PI=1 to run the real-pi probe")
+	if os.Getenv("COCONUT_TEST_REAL_PI") != "1" {
+		t.Skip("set COCONUT_TEST_REAL_PI=1 to run the real-pi probe")
 	}
 	if testing.Short() {
 		t.Skip("integration test")
@@ -32,26 +32,26 @@ func TestRealPiApprovalProbe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sidecar := filepath.Join(root, "build", "sidecar", "custard-pi")
+	sidecar := filepath.Join(root, "build", "sidecar", "coconut-pi")
 	if _, err := os.Stat(sidecar); err != nil {
 		t.Skipf("bundled sidecar not found at %s (run scripts/build-sidecar.sh)", sidecar)
 	}
-	t.Setenv("CUSTARD_PI_BINARY", sidecar)
-	t.Setenv("CUSTARD_PI_SCENARIO", "")
+	t.Setenv("COCONUT_PI_BINARY", sidecar)
+	t.Setenv("COCONUT_PI_SCENARIO", "")
 
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "README.md"), []byte("# Before\nhello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Copy the user's custard settings (provider/endpoint/key) into an
+	// Copy the user's coconut settings (provider/endpoint/key) into an
 	// isolated config dir so the probe neither mutates their app state nor
 	// needs env credentials.
 	home, _ := os.UserHomeDir()
-	srcSettings := filepath.Join(home, "Library", "Application Support", "custard", "settings.yaml")
+	srcSettings := filepath.Join(home, "Library", "Application Support", "coconut", "settings.yaml")
 	yamlBytes, err := os.ReadFile(srcSettings)
 	if err != nil {
-		t.Skipf("no custard settings.yaml at %s", srcSettings)
+		t.Skipf("no coconut settings.yaml at %s", srcSettings)
 	}
 	configDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(configDir, "settings.yaml"), yamlBytes, 0o600); err != nil {
@@ -61,7 +61,7 @@ func TestRealPiApprovalProbe(t *testing.T) {
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{
 		ConfigDir:     configDir,
-		ExtensionPath: filepath.Join(root, "pi-extension", "custard.ts"),
+		ExtensionPath: filepath.Join(root, "pi-extension", "coconut.ts"),
 		Emit:          collector.emit,
 	})
 	if err != nil {

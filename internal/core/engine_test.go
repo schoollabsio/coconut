@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // envelopeCollector captures everything the engine emits.
@@ -103,8 +103,8 @@ func TestEngineAgainstFakepi(t *testing.T) {
 	workspace := t.TempDir()
 	configDir := t.TempDir()
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", scenario)
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", scenario)
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{
@@ -216,8 +216,8 @@ func TestSequenceMonotonic(t *testing.T) {
 	}
 	fakepi := buildFakepi(t)
 	scenario, _ := filepath.Abs("../../testdata/scenarios/todo-app.json")
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", scenario)
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", scenario)
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
@@ -272,8 +272,8 @@ func TestWorkspacePickFlow(t *testing.T) {
 	}
 	workspace := t.TempDir()
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", scenario)
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", scenario)
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{

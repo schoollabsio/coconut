@@ -8,9 +8,9 @@ import (
 
 func TestResolveBinaryPackagedLayout(t *testing.T) {
 	dir := t.TempDir()
-	// Packaged layout: <MacOS>/custard (self) + <MacOS>/custard-pi (sidecar).
-	self := filepath.Join(dir, "custard")
-	sidecar := filepath.Join(dir, "custard-pi")
+	// Packaged layout: <MacOS>/coconut (self) + <MacOS>/coconut-pi (sidecar).
+	self := filepath.Join(dir, "coconut")
+	sidecar := filepath.Join(dir, "coconut-pi")
 	for _, p := range []string{self, sidecar} {
 		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
@@ -23,7 +23,7 @@ func TestResolveBinaryPackagedLayout(t *testing.T) {
 
 func TestResolveBinaryFallsBackToPATH(t *testing.T) {
 	dir := t.TempDir()
-	self := filepath.Join(dir, "custard")
+	self := filepath.Join(dir, "coconut")
 	if err := os.WriteFile(self, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
-# pi-extension/custard.ts
+# pi-extension/coconut.ts
 
-The Custard desktop app runs the real [`pi` coding agent](https://github.com/earendil-works/pi-mono)
-as an RPC sidecar. `custard.ts` is the agent-side enforcement + tooling layer
+The Coconut desktop app runs the real [`pi` coding agent](https://github.com/earendil-works/pi-mono)
+as an RPC sidecar. `coconut.ts` is the agent-side enforcement + tooling layer
 loaded into that pi process. It is a single TypeScript file — pi loads it via
 [jiti](https://github.com/unjs/jiti), so there is no build step and no
 `node_modules/` in this directory. Runtime imports are limited to `node:fs`,
@@ -11,9 +11,9 @@ the host pi installation).
 ## How the app launches pi
 
 ```bash
-PI_CODING_AGENT_DIR=<custard's isolated agent dir> \
+PI_CODING_AGENT_DIR=<coconut's isolated agent dir> \
 pi --mode rpc --no-extensions \
-   -e pi-extension/custard.ts \
+   -e pi-extension/coconut.ts \
    --tools read,bash,grep,find,ls,propose_edit,show_content
 ```
 
@@ -70,8 +70,8 @@ newlines. Each segment must be whitelisted or it gates for approval:
   `pwd`, `wc`, `file`, `stat`, `which`, `echo`, `git status`, `git diff`,
   `git log`, `git show`, `git branch`. A segment matches when it starts with a
   prefix followed by end-of-segment or whitespace.
-- **`CUSTARD_BASH_WHITELIST`**: comma-separated extra prefixes merged into the
-  whitelist (e.g. `CUSTARD_BASH_WHITELIST="go test,make,npm run"`). The prefix
+- **`COCONUT_BASH_WHITELIST`**: comma-separated extra prefixes merged into the
+  whitelist (e.g. `COCONUT_BASH_WHITELIST="go test,make,npm run"`). The prefix
   `*` allows everything *not dangerous*.
 - **Always gated** (never whitelisted): segments starting with `rm`, `rmdir`,
   `unlink`, `sudo`, `mv`, `chmod`, `chown`, `dd`, `mkfs`, or containing any
@@ -90,7 +90,7 @@ sandbox — the human approver is the real boundary.
 
 ### 4. System-prompt guidance (`before_agent_start`)
 
-Appends a concise **Custard environment** section to the system prompt on
+Appends a concise **Coconut environment** section to the system prompt on
 every run: file modifications MUST go through `propose_edit` (built-in
 edit/write don't exist), `propose_edit` blocks on user approval so the agent
 should gather context with read/grep first, propose complete well-formed edits
@@ -108,12 +108,12 @@ untrusted repo content cannot weaken the approval gates.
 
 `ctx.ui.confirm(title, message)` in RPC mode surfaces as an
 `extension_ui_request` on stdout; the backend answers with an
-`extension_ui_response` on stdin. Custard encodes approvals as:
+`extension_ui_response` on stdin. Coconut encodes approvals as:
 
 | Gate          | `title`                 | `message` (stringified JSON)                                          |
 | ------------- | ----------------------- | --------------------------------------------------------------------- |
-| propose_edit  | `custard://propose_edit` | `{ "toolCallId", "path", "what", "why", "edits": [{oldText,newText}] }` |
-| bash          | `custard://bash`         | `{ "toolCallId", "command" }`                                          |
+| propose_edit  | `coconut://propose_edit` | `{ "toolCallId", "path", "what", "why", "edits": [{oldText,newText}] }` |
+| bash          | `coconut://bash`         | `{ "toolCallId", "command" }`                                          |
 
 Request on stdout (from pi):
 
@@ -122,7 +122,7 @@ Request on stdout (from pi):
   "type": "extension_ui_request",
   "id": "uuid-1",
   "method": "confirm",
-  "title": "custard://propose_edit",
+  "title": "coconut://propose_edit",
   "message": "{\"toolCallId\":\"call_abc\",\"path\":\"src/app.go\",\"what\":\"...\",\"why\":\"...\",\"edits\":[{\"oldText\":\"...\",\"newText\":\"...\"}]}"
 }
 ```
@@ -153,5 +153,5 @@ The `toolCallId` correlates the approval with the `tool_execution_start` /
 Syntax-check after editing (no typecheck/build step required by pi):
 
 ```bash
-bun build pi-extension/custard.ts --no-bundle --outfile /dev/null
+bun build pi-extension/coconut.ts --no-bundle --outfile /dev/null
 ```

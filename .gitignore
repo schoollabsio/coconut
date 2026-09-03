@@ -2,7 +2,7 @@
 /build/bin
 /frontend/dist
 /frontend/node_modules
-/custard
+/coconut
 
 # Pi sidecar artifacts
 /pi-extension/node_modules

@@ -1,7 +1,7 @@
 // Package piadapter wraps the pi sidecar process and its JSONL RPC
 // protocol (pi docs/rpc.md). It owns the process lifecycle, command/
 // response correlation, and the raw event stream. It deliberately knows
-// nothing about custard's domain; normalization lives in internal/core.
+// nothing about coconut's domain; normalization lives in internal/core.
 package piadapter
 
 import (
@@ -281,7 +281,7 @@ func strQuote(s string) string {
 
 // ProcessConfig describes how to launch the sidecar.
 type ProcessConfig struct {
-	Binary string   // path to pi binary (bundled custard-pi or system "pi")
+	Binary string   // path to pi binary (bundled coconut-pi or system "pi")
 	Args   []string // full argument list (see LaunchArgs)
 	Env    []string // extra environment (merged over os.Environ by caller)
 	Dir    string   // working directory (the workspace)

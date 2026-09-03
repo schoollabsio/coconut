@@ -1,6 +1,6 @@
-# AGENTS.md — Custard: A human-in-the-loop coding agent
+# AGENTS.md — Coconut: A human-in-the-loop coding agent
 
-Custard is a desktop coding-agent app: chat with an agent that works in a
+Coconut is a desktop coding-agent app: chat with an agent that works in a
 folder you choose, watch its tool calls live, and approve every file edit
 before it lands. Agent output documents render into a fenced content panel.
 
@@ -10,12 +10,12 @@ Architecture:
 ┌──────────────┐   JSONL RPC   ┌───────────────┐   Wails IPC   ┌──────────────┐
 │ pi sidecar   │ ◄───────────► │ Go backend    │ ◄───────────► │ React UI     │
 │ (agent loop) │               │ (actor, seq,  │               │ (UI store,   │
-│ + custard.ts │               │  snapshots)   │               │  components) │
+│ + coconut.ts │               │  snapshots)   │               │  components) │
 └──────────────┘               └───────────────┘               └──────────────┘
 ```
 
 - **pi sidecar** — the real `pi` agent in `--mode rpc`, launched with an
-  isolated config dir and the custard extension (`pi-extension/custard.ts`),
+  isolated config dir and the coconut extension (`pi-extension/coconut.ts`),
   which registers `propose_edit` / `show_content` tools and gates bash
   commands behind approvals (with a whitelist).
 - **Go backend** (`internal/core`, `internal/piadapter`, `internal/protocol`) —
@@ -32,7 +32,7 @@ Read `PLAN.md` (the full technical spec) and `README.md` first.
 
 ### 1. Approval-gated editing
 The **only** file-modification channel is `propose_edit` (a pi tool
-registered by `pi-extension/custard.ts`). Built-in `edit`/`write` tools are
+registered by `pi-extension/coconut.ts`). Built-in `edit`/`write` tools are
 NOT available. When proposing edits, each `oldText` must match the file's
 current content exactly; edits apply sequentially.
 
@@ -91,7 +91,7 @@ exposes pi events raw.
 │   └── protocol/
 │       └── protocol.go         # Envelope types shared Go ↔ frontend
 ├── pi-extension/
-│   └── custard.ts              # Registered pi extension: approve-gated tools
+│   └── coconut.ts              # Registered pi extension: approve-gated tools
 ├── cmd/fakepi/                 # Scripted pi stand-in for testing/dev
 │   ├── main.go                 # CLI entry
 │   ├── scenario.go             # Scenario step execution
@@ -117,27 +117,27 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
 ```bash
 go build -o build/bin/fakepi ./cmd/fakepi
-export CUSTARD_PI_BINARY="$PWD/build/bin/fakepi"
-export CUSTARD_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
+export COCONUT_PI_BINARY="$PWD/build/bin/fakepi"
+export COCONUT_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
 wails dev
 ```
 
 ### Dev against the real pi
 
 ```bash
-unset CUSTARD_PI_BINARY CUSTARD_PI_SCENARIO
+unset COCONUT_PI_BINARY COCONUT_PI_SCENARIO
 wails dev
 ```
 The app uses an isolated config dir; enter an API key once in the Settings
-modal. `CUSTARD_CONFIG_DIR` overrides the config location.
+modal. `COCONUT_CONFIG_DIR` overrides the config location.
 
 ---
 
 ## Common workflows
 
 ### Add a new tool / approval kind
-1. Register the tool in `pi-extension/custard.ts` with a
-   `ctx.ui.confirm("custard://<kind>", jsonString)` gate.
+1. Register the tool in `pi-extension/coconut.ts` with a
+   `ctx.ui.confirm("coconut://<kind>", jsonString)` gate.
 2. In `internal/core/normalize.go`: handle `extension_ui_request` — parse
    the title, compute a diff (see `buildUnifiedDiff` in `diff.go`) if
    applicable, and call `registerApprovalLocked` with a new
@@ -272,7 +272,7 @@ buffered `respond` channel, or use `viaPi` for async pi-backed work.
 ### Event normalization (`internal/core/normalize.go`)
 Translates raw pi events into domain mutations + backend emissions.
 `setStatus` only emits `agent.status.changed` on transitions.
-`extension_ui_request` events with `custard://` titles are bridged to
+`extension_ui_request` events with `coconut://` titles are bridged to
 approval requests; `notify` method events pass through as notifications.
 `show_content` completions promote the call args into the content panel
 doc: mode A (`path`+`content`) renders the composed document; mode B
@@ -287,14 +287,14 @@ its contents never enter the model transcript. Errors become notifications.
 - `onSidecarGone` — handles unexpected exit: emits `agent.sidecar.lost` and
   `agent.failed`, then single automatic restart with session restore.
 - `buildLaunchSpec` — assembles the pi command line; checks
-  `CUSTARD_PI_BINARY` for dev/fakepi.
+  `COCONUT_PI_BINARY` for dev/fakepi.
 
 ### Agent + session storage (`internal/core/slug.go`, `agents.go`)
 The top-left name is a persistent, workspace-scoped AGENT identity; each
 agent owns a run of pi sessions:
 
 ```
-<workspace>/.custard/agents/<agent-slug>/sessions/<timestamp>_<uuid>.jsonl
+<workspace>/.coconut/agents/<agent-slug>/sessions/<timestamp>_<uuid>.jsonl
 ```
 
 The slug derives from the agent name (`Frontend Agent` → `frontend-agent`).
@@ -305,8 +305,8 @@ move is deferred to the next sidecar launch (`pendingSlug`, applied by
 `applyPendingRename`, which re-keys the map) because pi caches the
 transcript's absolute path — a mid-session move risks compaction splitting
 the transcript. Legacy transcripts outside the workspace are adopted (moved
-in) at launch; the pre-agents `.custard/sessions/<slug>/` layout migrates
-into `agents/<slug>/sessions/` on scan. `.custard/.gitignore` (`*`) keeps
+in) at launch; the pre-agents `.coconut/sessions/<slug>/` layout migrates
+into `agents/<slug>/sessions/` on scan. `.coconut/.gitignore` (`*`) keeps
 transcripts out of accidental commits.
 
 `scanAgentsLocked` (`agents.go`) inventories the workspace for the picker:
@@ -321,7 +321,7 @@ state.json → newest session's `session_info.name` → humanized slug.
 - Unknown top-level keys rejected (strict YAML).
 - Provider config (`providers:`) translated to pi's `models.json`.
 - Built-in provider API keys sent via env, not files.
-- `CUSTARD_BASH_WHITELIST` adds extra whitelist prefixes.
+- `COCONUT_BASH_WHITELIST` adds extra whitelist prefixes.
 - Errors block saving; warnings are informational.
 
 ### Diff (`internal/core/diff.go`)
@@ -335,7 +335,7 @@ See Protocol conventions above.
 
 ### Pi adapter (`internal/piadapter/piadapter.go`)
 JSONL RPC client. Owns process lifecycle, command/response correlation
-(by `id`), and raw event stream. Deliberately knows nothing about custard's
+(by `id`), and raw event stream. Deliberately knows nothing about coconut's
 domain — normalization lives in `internal/core`.
 
 ---
@@ -400,7 +400,7 @@ cd frontend && npx vitest run       # UI store tests
 ### Writing a fakepi scenario
 See `cmd/fakepi/README.md`. The approval wire contract:
 1. pi emits `tool_execution_start` → `extension_ui_request` (title
-   `custard://propose_edit` / `custard://bash`, message is a JSON **string**)
+   `coconut://propose_edit` / `coconut://bash`, message is a JSON **string**)
 2. Client answers `extension_ui_response` (`confirmed: true` or
    `cancelled: true`)
 3. pi emits `tool_execution_end`
@@ -415,11 +415,11 @@ by response). Steps execute concurrently with command dispatch.
 
 | Variable | Purpose |
 |---|---|
-| `CUSTARD_PI_BINARY` | Override the sidecar binary path (dev/fakepi) |
-| `CUSTARD_PI_SCENARIO` | Path to a fakepi scenario JSON |
-| `CUSTARD_CONFIG_DIR` | Override the app config directory |
-| `CUSTARD_EXTENSION` | Override the pi extension path |
-| `CUSTARD_BASH_WHITELIST` | Extra comma-separated bash whitelist prefixes |
+| `COCONUT_PI_BINARY` | Override the sidecar binary path (dev/fakepi) |
+| `COCONUT_PI_SCENARIO` | Path to a fakepi scenario JSON |
+| `COCONUT_CONFIG_DIR` | Override the app config directory |
+| `COCONUT_EXTENSION` | Override the pi extension path |
+| `COCONUT_BASH_WHITELIST` | Extra comma-separated bash whitelist prefixes |
 | `PI_CODING_AGENT_DIR` | Set by backend — isolated pi config dir |
 | `PI_SKIP_VERSION_CHECK` | Set by backend |
 | `PI_TELEMETRY` | Set by backend |
@@ -434,12 +434,12 @@ cd frontend && bun run build
 
 # macOS package (self-contained app bundle)
 scripts/package.sh
-open build/bin/custard.app
+open build/bin/coconut.app
 ```
 
 The packaged app bundles: the Go binary, the embedded `frontend/dist`,
 the pi sidecar (single ~70MB binary in `build/sidecar/`), and the
-custard extension (`pi-extension/custard.ts`).
+coconut extension (`pi-extension/coconut.ts`).
 
 ---
 

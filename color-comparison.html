@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coconut Color Palette — Old vs New Comparison</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0c;
+      color: #ffffff;
+      padding: 32px;
+    }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { color: #8c939c; font-size: 13px; margin-bottom: 32px; }
+    .container {
+      display: flex;
+      gap: 4px;
+      max-width: 1600px;
+    }
+    .column {
+      flex: 1;
+      min-width: 0;
+    }
+    .column-header {
+      padding: 12px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-bottom: 1px solid #262a30;
+      margin-bottom: 2px;
+    }
+    .old-header { background: #15171a; border-left: 3px solid #e4b85f; }
+    .new-header { background: #15171a; border-left: 3px solid #58c97e; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 2px;
+      padding: 2px;
+    }
+    .swatch {
+      display: flex;
+      flex-direction: column;
+    }
+    .swatch-color {
+      height: 120px;
+      width: 100%;
+      border-right: 1px solid #15171a;
+      border-bottom: 1px solid #15171a;
+      position: relative;
+    }
+    .swatch-info {
+      padding: 8px 10px;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .swatch-name {
+      font-weight: 600;
+      color: #c9ced6;
+      font-size: 12px;
+    }
+    .swatch-value {
+      color: #8c939c;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    .swatch-role {
+      color: #5b626b;
+      font-size: 10px;
+      margin-top: 1px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    /* Ensure text is readable on light swatches */
+    .light .swatch-name, .light .swatch-value, .light .swatch-role {
+      color: #1c1f24;
+      text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+    }
+    .separator { width: 1px; background: #262a30; }
+    /* Section titles */
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #5b626b;
+      margin: 20px 0 8px 0;
+      padding-left: 2px;
+    }
+    /* Background hierarchy strip */
+    .hierarchy {
+      display: flex;
+      height: 24px;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 8px 0 20px;
+      border: 1px solid #262a30;
+    }
+    .hierarchy-bar {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-family: 'SF Mono', monospace;
+      color: #5b626b;
+    }
+    .old .hierarchy-bar { color: #5b626b; }
+    .new .hierarchy-bar { color: #5b626b; }
+    .note {
+      color: #5b626b;
+      font-size: 11px;
+      font-style: italic;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Coconut Color Palette Comparison</h1>
+  <div class="subtitle">Old (warm gold/brown) vs New (cool green/black) — hover a swatch for its value</div>
+
+  <div class="container">
+    <!-- OLD PALETTE -->
+    <div class="column">
+      <div class="column-header old-header">Old — Warm Gold/Brown</div>
+      <div class="section-title">Backgrounds</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#0a0a0c"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Base</div>
+            <div class="swatch-value">#0a0a0c</div>
+            <div class="swatch-role">Background</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#101012"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Surface</div>
+            <div class="swatch-value">#101012</div>
+            <div class="swatch-role">Subtle bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#1a1713"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Surface</div>
+            <div class="swatch-value">#1a1713</div>
+            <div class="swatch-role">Panel bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#211d18"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Surface 2</div>
+            <div class="swatch-value">#211d18</div>
+            <div class="swatch-role">Muted bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#2e2820"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Raised / Line</div>
+            <div class="swatch-value">#2e2820</div>
+            <div class="swatch-role">Border / Hover</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#3b3327"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Line Strong</div>
+            <div class="swatch-value">#3b3327</div>
+            <div class="swatch-role">Strong border</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Text</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#ffffff"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Ink</div>
+            <div class="swatch-value">#ffffff</div>
+            <div class="swatch-role">Primary text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#b8ac97"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Mute</div>
+            <div class="swatch-value">#b8ac97</div>
+            <div class="swatch-role">Secondary text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#8a7f6b"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Dim</div>
+            <div class="swatch-value">#8a7f6b</div>
+            <div class="swatch-role">Muted text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#6e6455"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Faint</div>
+            <div class="swatch-value">#6e6455</div>
+            <div class="swatch-role">Disabled text</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Accents & Status</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#e4b85f"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent</div>
+            <div class="swatch-value">#e4b85f</div>
+            <div class="swatch-role">Primary accent</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#f2cd7f"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent Hover</div>
+            <div class="swatch-value">#f2cd7f</div>
+            <div class="swatch-role">Hover state</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:rgba(228,184,95,0.12)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent Soft</div>
+            <div class="swatch-value">rgba(228,184,95,0.12)</div>
+            <div class="swatch-role">Soft bg tint</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#8bb88a"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">OK / Success</div>
+            <div class="swatch-value">#8bb88a</div>
+            <div class="swatch-role">Success</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#e08a4b"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Warn</div>
+            <div class="swatch-value">#e08a4b</div>
+            <div class="swatch-role">Warning</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#d96357"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Danger</div>
+            <div class="swatch-value">#d96357</div>
+            <div class="swatch-role">Error</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#7fa8c9"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Info</div>
+            <div class="swatch-value">#7fa8c9</div>
+            <div class="swatch-role">Information</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#0a0a0c; position:relative"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Selection</div>
+            <div class="swatch-value">rgba(228,184,95,0.28)</div>
+            <div class="swatch-role">::selection</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="separator"></div>
+
+    <!-- NEW PALETTE -->
+    <div class="column">
+      <div class="column-header new-header">New — Cool Green/Black (Coconut)</div>
+
+      <div class="section-title">Backgrounds</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#0e0f11"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Base</div>
+            <div class="swatch-value">#0E0F11</div>
+            <div class="swatch-role">Background</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#0a0b0c"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Inset</div>
+            <div class="swatch-value">#0A0B0C</div>
+            <div class="swatch-role">Inset / onaccent</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#15171a"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Surface</div>
+            <div class="swatch-value">#15171A</div>
+            <div class="swatch-role">Subtle bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#1c1f24"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Surface 2</div>
+            <div class="swatch-value">#1C1F24</div>
+            <div class="swatch-role">Muted bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#262a30"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Raised / Line</div>
+            <div class="swatch-value">#262A30</div>
+            <div class="swatch-role">Border / Hover</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#3b4148"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Line Strong</div>
+            <div class="swatch-value">#3B4148</div>
+            <div class="swatch-role">Strong border</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Text</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#ffffff"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Ink</div>
+            <div class="swatch-value">#FFFFFF</div>
+            <div class="swatch-role">Primary text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#c9ced6"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Mute</div>
+            <div class="swatch-value">#C9CED6</div>
+            <div class="swatch-role">Secondary text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#8c939c"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Dim</div>
+            <div class="swatch-value">#8C939C</div>
+            <div class="swatch-role">Muted text</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#5b626b"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Faint</div>
+            <div class="swatch-value">#5B626B</div>
+            <div class="swatch-role">Disabled text</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Accents & Status</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#58c97e"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent</div>
+            <div class="swatch-value">#58C97E</div>
+            <div class="swatch-role">Leafy green</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#71e19b"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent Hover</div>
+            <div class="swatch-value">#71E19B</div>
+            <div class="swatch-role">Green hover</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#3ea965"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Green Pressed</div>
+            <div class="swatch-value">#3EA965</div>
+            <div class="swatch-role">Active fill</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:rgba(88,201,126,0.14)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Accent Soft</div>
+            <div class="swatch-value">rgba(88,201,126,0.14)</div>
+            <div class="swatch-role">Green soft bg</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:rgba(88,201,126,0.38)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Focus Ring</div>
+            <div class="swatch-value">rgba(88,201,126,0.38)</div>
+            <div class="swatch-role">Focus glow</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#4fbe74"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">OK / Success</div>
+            <div class="swatch-value">#4FBE74</div>
+            <div class="swatch-role">Success</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#d9a05b"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Warn</div>
+            <div class="swatch-value">#D9A05B</div>
+            <div class="swatch-role">Warning</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#e06458"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Danger</div>
+            <div class="swatch-value">#E06458</div>
+            <div class="swatch-role">Error</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#7ba6c8"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Info</div>
+            <div class="swatch-value">#7BA6C8</div>
+            <div class="swatch-role">Information</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#0a0b0c; position:relative"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Selection</div>
+            <div class="swatch-value">rgba(88,201,126,0.28)</div>
+            <div class="swatch-role">::selection</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Brown / Husk (new)</div>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background:#a9784f"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Brown</div>
+            <div class="swatch-value">#A9784F</div>
+            <div class="swatch-role">Medium brown</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#c69a72"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Brown Bright</div>
+            <div class="swatch-value">#C69A72</div>
+            <div class="swatch-role">Bright brown</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:#6f4f36"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Brown Deep</div>
+            <div class="swatch-value">#6F4F36</div>
+            <div class="swatch-role">Deep brown</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:rgba(169,120,79,0.14)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Brown Soft</div>
+            <div class="swatch-value">rgba(169,120,79,0.14)</div>
+            <div class="swatch-role">Panel tint</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background:rgba(169,120,79,0.35)"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">Brown Border</div>
+            <div class="swatch-value">rgba(169,120,79,0.35)</div>
+            <div class="swatch-role">Outlined elem</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/jschool/custard/internal/piadapter"
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // routeCommand dispatches one frontend command on the actor goroutine.

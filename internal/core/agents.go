@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // ---------------------------------------------------------------------------
-// Workspace scan: discover agents + their sessions under .custard/agents/.
+// Workspace scan: discover agents + their sessions under .coconut/agents/.
 // Display names resolve in order: state.json → the session file's
 // session_info.name → humanized slug.
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ func (e *Engine) scanAgentsLocked() []protocol.AgentSummary {
 	migrateLegacyLayout(workspace)
 	ws := e.state.app.ws(workspace)
 
-	root := filepath.Join(workspace, ".custard", "agents")
+	root := filepath.Join(workspace, ".coconut", "agents")
 	dirs, err := os.ReadDir(root)
 	if err != nil {
 		return nil

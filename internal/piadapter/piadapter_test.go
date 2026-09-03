@@ -242,12 +242,12 @@ func TestLaunchSpecArgs(t *testing.T) {
 			BashWhitelist: []string{"make", "go build"},
 			SessionName:   "demo",
 		},
-		"/ws", "/cfg/agent", "/cfg/sessions", "/ext/custard.ts", "/bin/custard-pi",
+		"/ws", "/cfg/agent", "/cfg/sessions", "/ext/coconut.ts", "/bin/coconut-pi",
 	)
 	joined := strings.Join(spec.Args, " ")
 	for _, want := range []string{
-		"--mode rpc", "--no-extensions", "-e /ext/custard.ts",
-		"--tools read,bash,grep,find,ls,propose_edit,show_content",
+		"--mode rpc", "--no-extensions", "-e /ext/coconut.ts",
+		"--tools read,run,grep,find,ls,propose_edit,show_content",
 		"--provider anthropic", "--model sonnet",
 		"--session-dir /cfg/sessions", "--name demo",
 	} {
@@ -259,22 +259,22 @@ func TestLaunchSpecArgs(t *testing.T) {
 	for _, want := range []string{
 		"PI_CODING_AGENT_DIR=/cfg/agent",
 		"ANTHROPIC_API_KEY=sk-test",
-		"CUSTARD_BASH_WHITELIST=make,go build",
+		"COCONUT_BASH_WHITELIST=make,go build",
 		"PI_SKIP_VERSION_CHECK=1",
 	} {
 		if !strings.Contains(envJoined, want) {
 			t.Errorf("env missing %q", want)
 		}
 	}
-	if spec.Dir != "/ws" || spec.Binary != "/bin/custard-pi" {
+	if spec.Dir != "/ws" || spec.Binary != "/bin/coconut-pi" {
 		t.Errorf("bad spec: %+v", spec)
 	}
 }
 
 func TestMergedEnvOverride(t *testing.T) {
-	t.Setenv("CUSTARD_TEST_KEEP", "orig")
-	t.Setenv("CUSTARD_TEST_SWAP", "orig")
-	merged := MergedEnv([]string{"CUSTARD_TEST_SWAP=new", "CUSTARD_TEST_ADD=yes"})
+	t.Setenv("COCONUT_TEST_KEEP", "orig")
+	t.Setenv("COCONUT_TEST_SWAP", "orig")
+	merged := MergedEnv([]string{"COCONUT_TEST_SWAP=new", "COCONUT_TEST_ADD=yes"})
 
 	seen := map[string]string{}
 	for _, kv := range merged {
@@ -282,13 +282,13 @@ func TestMergedEnvOverride(t *testing.T) {
 			seen[kv[:i]] = kv[i+1:]
 		}
 	}
-	if seen["CUSTARD_TEST_KEEP"] != "orig" {
+	if seen["COCONUT_TEST_KEEP"] != "orig" {
 		t.Error("unrelated var lost")
 	}
-	if seen["CUSTARD_TEST_SWAP"] != "new" {
+	if seen["COCONUT_TEST_SWAP"] != "new" {
 		t.Error("override did not win")
 	}
-	if seen["CUSTARD_TEST_ADD"] != "yes" {
+	if seen["COCONUT_TEST_ADD"] != "yes" {
 		t.Error("addition missing")
 	}
 }

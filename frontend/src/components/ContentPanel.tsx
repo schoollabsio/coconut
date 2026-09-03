@@ -46,7 +46,9 @@ export function ContentPanel({ client }: { client: BackendClient }) {
         <ApprovalView approval={approval} client={client} />
       ) : content ? (
         <div className="flex-1 overflow-y-auto p-4">
-          <Markdown text={content.content} />
+          <div className="max-w-3xl mx-auto">
+            <Markdown text={content.content} className="text-ink" />
+          </div>
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
@@ -73,13 +75,13 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
           {approval.what && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">What</div>
-              <p className="text-sm text-ink leading-relaxed">{approval.what}</p>
+              <p className="text-base text-ink leading-relaxed">{approval.what}</p>
             </div>
           )}
           {approval.why && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Why</div>
-              <div className="text-sm text-mute leading-relaxed">{approval.why}</div>
+              <div className="text-base text-mute leading-relaxed">{approval.why}</div>
             </div>
           )}
           {approval.diff && (
@@ -90,16 +92,30 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
           )}
         </>
       ) : (
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Command</div>
-          <pre className="rounded-lg border border-line bg-base px-3 py-2.5 font-mono text-xs text-ink overflow-x-auto whitespace-pre-wrap">
-            {approval.command}
-          </pre>
-          <p className="text-xs text-dim mt-2">
-            This command is not on the whitelist. Approve to run it once; approve similar commands automatically by
-            extending the whitelist in settings.
-          </p>
-        </div>
+        <>
+          {approval.what && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">What</div>
+              <p className="text-base text-ink leading-relaxed">{approval.what}</p>
+            </div>
+          )}
+          {approval.why && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Why</div>
+              <div className="text-base text-mute leading-relaxed">{approval.why}</div>
+            </div>
+          )}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">Command</div>
+            <pre className="rounded-lg border border-line bg-base px-3 py-2.5 font-mono text-xs text-ink overflow-x-auto whitespace-pre-wrap">
+              {approval.command}
+            </pre>
+            <p className="text-xs text-dim mt-2">
+              This command is not on the whitelist. Approve to run it once; approve similar commands automatically by
+              extending the whitelist in settings.
+            </p>
+          </div>
+        </>
       )}
 
       <div className="flex justify-end items-center gap-3">

@@ -11,21 +11,21 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigDir resolves the app config directory. CUSTARD_CONFIG_DIR
-// overrides (dev/tests); otherwise os.UserConfigDir()/custard.
+// ConfigDir resolves the app config directory. COCONUT_CONFIG_DIR
+// overrides (dev/tests); otherwise os.UserConfigDir()/coconut.
 func ConfigDir() (string, error) {
-	if dir := os.Getenv("CUSTARD_CONFIG_DIR"); dir != "" {
+	if dir := os.Getenv("COCONUT_CONFIG_DIR"); dir != "" {
 		return dir, nil
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "custard"), nil
+	return filepath.Join(base, "coconut"), nil
 }
 
 // DefaultBashWhitelist mirrors the extension's read-only defaults; the
@@ -67,7 +67,7 @@ type ProviderSettings struct {
 }
 
 // knownAPIs mirrors pi-ai's KnownApi type. Validated strictly because
-// custard launches pi with --no-extensions, so only built-in APIs can work.
+// coconut launches pi with --no-extensions, so only built-in APIs can work.
 var knownAPIs = map[string]bool{
 	"openai-completions":      true,
 	"openai-responses":        true,
@@ -277,7 +277,7 @@ func HasErrors(ps []protocol.ConfigProblem) bool {
 
 // DefaultSettingsYAML is written to settings.yaml on first run; its
 // comments double as the config documentation shown in the settings modal.
-var DefaultSettingsYAML = `# custard settings
+var DefaultSettingsYAML = `# coconut settings
 
 # Provider: a built-in pi provider (anthropic, openai, google, groq, mistral,
 # xai, openrouter, deepseek, github-copilot, ...) or a name you define under
@@ -366,7 +366,7 @@ func saveSettingsYAML(configDir, raw string) (Settings, []protocol.ConfigProblem
 }
 
 // EnsureBashWhitelist inserts missing prefixes (e.g. from
-// CUSTARD_BASH_WHITELIST) into the in-memory config only.
+// COCONUT_BASH_WHITELIST) into the in-memory config only.
 func (s *Settings) EnsureBashWhitelist(prefixes ...string) {
 	seen := map[string]bool{}
 	for _, p := range s.BashWhitelist {

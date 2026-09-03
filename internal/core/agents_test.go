@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // unmarshalPayload re-decodes a CommandResponse's generic payload.
@@ -49,7 +49,7 @@ func TestScanAgents(t *testing.T) {
 	writeFakeSession(t, filepath.Join(sessionsDirFor(workspace, "frontend"), "empty.jsonl"), "Frontend", "", false)
 
 	// Legacy pre-agents layout migrates into agents/ on scan.
-	writeFakeSession(t, filepath.Join(workspace, ".custard", "sessions", "legacy-bot", "old.jsonl"), "Legacy Bot", "hello from the past", true)
+	writeFakeSession(t, filepath.Join(workspace, ".coconut", "sessions", "legacy-bot", "old.jsonl"), "Legacy Bot", "hello from the past", true)
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
@@ -86,7 +86,7 @@ func TestScanAgents(t *testing.T) {
 	if legacy.Slug != "legacy-bot" || legacy.Name != "Legacy Bot" || len(legacy.Sessions) != 1 {
 		t.Fatalf("legacy migration wrong: %+v", legacy)
 	}
-	if dirExists(filepath.Join(workspace, ".custard", "sessions")) {
+	if dirExists(filepath.Join(workspace, ".coconut", "sessions")) {
 		t.Fatal("legacy sessions root should be gone after migration")
 	}
 	if legacy.Sessions[0].Preview != "hello from the past" {
@@ -104,8 +104,8 @@ func TestWorkspaceSetNeedsPick(t *testing.T) {
 	workspace := t.TempDir()
 	writeFakeSession(t, filepath.Join(sessionsDirFor(workspace, "primary"), "a.jsonl"), "Primary", "earlier work", true)
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", "")
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", "")
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
@@ -155,8 +155,8 @@ func TestAgentResetFlow(t *testing.T) {
 	fakepi := buildFakepi(t)
 	workspace := t.TempDir()
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", "")
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", "")
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
@@ -203,8 +203,8 @@ func TestAgentRenameDefersAndApplies(t *testing.T) {
 	fakepi := buildFakepi(t)
 	workspace := t.TempDir()
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", "")
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", "")
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
@@ -263,8 +263,8 @@ func TestAgentOpenByName(t *testing.T) {
 	fakepi := buildFakepi(t)
 	workspace := t.TempDir()
 
-	t.Setenv("CUSTARD_PI_BINARY", fakepi)
-	t.Setenv("CUSTARD_PI_SCENARIO", "")
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", "")
 
 	collector := &envelopeCollector{}
 	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})

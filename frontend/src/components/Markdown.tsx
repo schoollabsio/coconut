@@ -2,9 +2,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 /** Markdown renderer styled to match the mockup's chat/content look. */
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
-    <div className="text-mute leading-relaxed space-y-3 [&_p]:leading-relaxed">
+    <div className={`text-base text-mute leading-loose space-y-4 [&_p]:leading-loose ${className ?? ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -23,16 +23,17 @@ export function Markdown({ text }: { text: string }) {
           ul: ({ children }) => <ul className="list-disc list-outside ml-4 space-y-1.5">{children}</ul>,
           ol: ({ children }) => <ol className="list-decimal list-outside ml-4 space-y-1.5">{children}</ol>,
           li: ({ children }) => <li>{children}</li>,
-          h1: ({ children }) => <h1 className="text-lg font-semibold text-ink">{children}</h1>,
-          h2: ({ children }) => <h2 className="text-onaccent font-semibold text-ink">{children}</h2>,
-          h3: ({ children }) => <h3 className="text-sm font-semibold text-ink">{children}</h3>,
+          h1: ({ children }) => <h1 className="text-3xl font-semibold text-ink">{children}</h1>,
+          h2: ({ children }) => <h2 className="text-xl font-semibold text-brownbright">{children}</h2>,
+          h3: ({ children }) => <h3 className="text-lg font-semibold text-ink">{children}</h3>,
+          h4: ({ children }) => <h4 className="text-base font-medium text-ink">{children}</h4>,
           a: ({ children, href }) => (
             <a href={href} className="text-info hover:underline" target="_blank" rel="noreferrer">
               {children}
             </a>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-linestrong pl-3 text-mute">{children}</blockquote>
+            <blockquote className="border-l-2 border-linestrong pl-3 text-mute italic">{children}</blockquote>
           ),
         }}
       >

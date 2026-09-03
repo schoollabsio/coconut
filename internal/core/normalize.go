@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/jschool/custard/internal/piadapter"
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // normalizePiEvent translates one raw pi event into domain mutations
@@ -245,6 +245,7 @@ func toolLabel(tool string, info toolStartInfo) string {
 	name := map[string]string{
 		"read":         "Read",
 		"bash":         "Run",
+		"run":          "Run",
 		"edit":         "Edit",
 		"write":        "Write",
 		"grep":         "Grep",
@@ -271,7 +272,7 @@ func toolLabel(tool string, info toolStartInfo) string {
 }
 
 // ---------------------------------------------------------------------------
-// Extension UI bridging (custard:// approval scheme)
+// Extension UI bridging (coconut:// approval scheme)
 // ---------------------------------------------------------------------------
 
 type extUIRequest struct {
@@ -305,10 +306,10 @@ func (e *Engine) handleExtensionUIRequest(raw json.RawMessage) {
 	}
 
 	switch req.Title {
-	case "custard://propose_edit":
+	case "coconut://propose_edit":
 		e.bridgeProposeEdit(req)
-	case "custard://bash":
-		e.bridgeBashApproval(req)
+	case "coconut://run":
+		e.bridgeRunApproval(req)
 	default:
 		// Not ours (shouldn't happen with --no-extensions): dismiss
 		// dialogs so nothing hangs; ignore fire-and-forget methods.
@@ -365,22 +366,26 @@ func (e *Engine) bridgeProposeEdit(req extUIRequest) {
 	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
 }
 
-func (e *Engine) bridgeBashApproval(req extUIRequest) {
+func (e *Engine) bridgeRunApproval(req extUIRequest) {
 	var payload struct {
 		ToolCallID string `json:"toolCallId"`
 		Command    string `json:"command"`
+		What       string `json:"what"`
+		Why        string `json:"why"`
 	}
 	if err := json.Unmarshal([]byte(req.Message), &payload); err != nil {
 		e.sendPiRaw(map[string]any{"type": "extension_ui_response", "id": req.ID, "cancelled": true})
-		e.notify("error", "malformed bash approval request")
+		e.notify("error", "malformed run approval request")
 		return
 	}
 	e.state.toolCounter++
 	approval := protocol.ApprovalRequest{
 		ID:      "ap-" + itoa(e.state.toolCounter),
 		Kind:    protocol.ApprovalKindBash,
-		Title:   "Run shell command?",
+		Title:   "Run command?",
 		Command: payload.Command,
+		What:    payload.What,
+		Why:     payload.Why,
 	}
 	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
 }

@@ -192,7 +192,7 @@
         "type": "extension_ui_request",
         "id": "appr_1",
         "method": "confirm",
-        "title": "custard://propose_edit",
+        "title": "coconut://propose_edit",
         "message": "{\"toolCallId\":\"call_3\",\"path\":\"TodoList.tsx\",\"what\":\"Use todo.id in the delete handler instead of the array index\",\"why\":\"The list is filtered, so indexes shift and the wrong item is deleted\",\"edits\":[{\"oldText\":\"onClick={() => onDelete(index)}\",\"newText\":\"onClick={() => onDelete(todo.id)}\"}]}"
       },
       "delayMs": 30
@@ -461,7 +461,7 @@
         "type": "extension_ui_request",
         "id": "appr_2",
         "method": "confirm",
-        "title": "custard://propose_edit",
+        "title": "coconut://propose_edit",
         "message": "{\"toolCallId\":\"call_5\",\"path\":\"TodoItem.tsx\",\"what\":\"Add a checkbox that toggles todo completion\",\"why\":\"Users need to mark todos complete; completed items show a line-through\",\"edits\":[{\"oldText\":\"<span>{todo.text}</span>\",\"newText\":\"<label><input type=\\\"checkbox\\\" checked={todo.done} onChange={() => onToggle(todo.id)} /><span style={{ textDecoration: todo.done ? 'line-through' : 'none' }}>{todo.text}</span></label>\"}]}"
       },
       "delayMs": 30

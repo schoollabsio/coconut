@@ -54,7 +54,7 @@ func TestLoadStateMigratesLegacyV1(t *testing.T) {
 
 func TestLoadStateMigratesLegacyV2(t *testing.T) {
 	dir := t.TempDir()
-	v2 := `{"workspacePath":"/ws","workspaces":{"/ws":{"sessionName":"Renamed","sessionSlug":"old-slug","pendingSlug":"renamed","lastSessionFile":"/ws/.custard/sessions/old-slug/x.jsonl"}}}`
+	v2 := `{"workspacePath":"/ws","workspaces":{"/ws":{"sessionName":"Renamed","sessionSlug":"old-slug","pendingSlug":"renamed","lastSessionFile":"/ws/.coconut/sessions/old-slug/x.jsonl"}}}`
 	if err := os.WriteFile(statePath(dir), []byte(v2), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestApplyPendingRename(t *testing.T) {
 
 func TestMigrateLegacyLayout(t *testing.T) {
 	workspace := t.TempDir()
-	old := filepath.Join(workspace, ".custard", "sessions", "primary")
+	old := filepath.Join(workspace, ".coconut", "sessions", "primary")
 	if err := os.MkdirAll(old, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestMigrateLegacyLayout(t *testing.T) {
 	if !fileExists(moved) {
 		t.Fatal("legacy session not moved into agents layout")
 	}
-	if dirExists(filepath.Join(workspace, ".custard", "sessions")) {
+	if dirExists(filepath.Join(workspace, ".coconut", "sessions")) {
 		t.Fatal("legacy sessions root should be removed once empty")
 	}
 }
@@ -163,18 +163,18 @@ func TestEnsureAgentDirGitignore(t *testing.T) {
 	if !dirExists(dir) || filepath.Base(filepath.Dir(dir)) != "primary" {
 		t.Fatalf("sessions dir wrong: %q", dir)
 	}
-	b, err := os.ReadFile(filepath.Join(workspace, ".custard", ".gitignore"))
+	b, err := os.ReadFile(filepath.Join(workspace, ".coconut", ".gitignore"))
 	if err != nil || string(b) != "*\n!.gitignore\n" {
 		t.Fatalf(".gitignore missing/wrong: %q %v", b, err)
 	}
 	custom := "# custom\n"
-	if err := os.WriteFile(filepath.Join(workspace, ".custard", ".gitignore"), []byte(custom), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, ".coconut", ".gitignore"), []byte(custom), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ensureAgentDir(workspace, "primary"); err != nil {
 		t.Fatal(err)
 	}
-	b, _ = os.ReadFile(filepath.Join(workspace, ".custard", ".gitignore"))
+	b, _ = os.ReadFile(filepath.Join(workspace, ".coconut", ".gitignore"))
 	if string(b) != custom {
 		t.Fatal("user-modified .gitignore was overwritten")
 	}

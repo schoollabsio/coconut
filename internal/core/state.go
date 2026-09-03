@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // domainState is owned exclusively by the actor goroutine.

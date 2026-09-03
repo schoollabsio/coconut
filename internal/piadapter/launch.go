@@ -21,20 +21,20 @@ type SidecarSettings struct {
 	Model         string   // optional model pattern/ID
 	APIKey        string   // provider key; injected via env
 	APIKeyEnv     []string // env var names for the key; empty = use convention
-	BashWhitelist []string // extra prefixes for CUSTARD_BASH_WHITELIST
+	BashWhitelist []string // extra prefixes for COCONUT_BASH_WHITELIST
 	SessionName   string
 }
 
-// ResolveBinary picks the sidecar binary: the bundled custard-pi next to
+// ResolveBinary picks the sidecar binary: the bundled coconut-pi next to
 // our executable (packaged builds / repo build/sidecar), else "pi" from
 // PATH (development fallback).
 func ResolveBinary(selfPath string) string {
 	if selfPath != "" {
 		dir := filepath.Dir(selfPath)
 		candidates := []string{
-			filepath.Join(dir, "custard-pi"),                  // packaged: next to app binary
-			filepath.Join(dir, "..", "sidecar", "custard-pi"), // repo build/sidecar from build/bin
-			filepath.Join(dir, "..", "..", "build", "sidecar", "custard-pi"),
+			filepath.Join(dir, "coconut-pi"),                  // packaged: next to app binary
+			filepath.Join(dir, "..", "sidecar", "coconut-pi"), // repo build/sidecar from build/bin
+			filepath.Join(dir, "..", "..", "build", "sidecar", "coconut-pi"),
 		}
 		for _, p := range candidates {
 			if info, err := os.Stat(p); err == nil && !info.IsDir() {
@@ -52,17 +52,17 @@ func ResolveBinary(selfPath string) string {
 // BuildLaunchSpec assembles the sidecar invocation:
 //
 //	pi --mode rpc --no-extensions -e <extension> \
-//	   --tools read,bash,grep,find,ls,propose_edit,show_content \
+//	   --tools read,run,grep,find,ls,propose_edit,show_content \
 //	   [--provider P --model M] --session-dir <dir> [--name N]
 //
 // env: PI_CODING_AGENT_DIR (isolated config), provider API key,
-// CUSTARD_BASH_WHITELIST, PI_SKIP_VERSION_CHECK=1.
+// COCONUT_BASH_WHITELIST, PI_SKIP_VERSION_CHECK=1.
 func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensionPath, binary string) LaunchSpec {
 	args := []string{
 		"--mode", "rpc",
 		"--no-extensions",
 		"-e", extensionPath,
-		"--tools", "read,bash,grep,find,ls,propose_edit,show_content",
+		"--tools", "read,run,grep,find,ls,propose_edit,show_content",
 		"--session-dir", sessionDir,
 	}
 	if s.Provider != "" {
@@ -81,7 +81,7 @@ func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensi
 		"PI_TELEMETRY=0",
 	}
 	if len(s.BashWhitelist) > 0 {
-		env = append(env, "CUSTARD_BASH_WHITELIST="+strings.Join(s.BashWhitelist, ","))
+		env = append(env, "COCONUT_BASH_WHITELIST="+strings.Join(s.BashWhitelist, ","))
 	}
 	if s.APIKey != "" {
 		names := s.APIKeyEnv

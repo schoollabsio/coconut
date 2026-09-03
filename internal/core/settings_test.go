@@ -214,7 +214,7 @@ func TestLoadSettingsYAMLCreatesTemplate(t *testing.T) {
 	if cfg.Provider != "anthropic" {
 		t.Fatalf("template provider = %q", cfg.Provider)
 	}
-	if !strings.Contains(raw, "# custard settings") {
+	if !strings.Contains(raw, "# coconut settings") {
 		t.Fatal("raw should be the commented template")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "settings.yaml")); err != nil {

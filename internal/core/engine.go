@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jschool/custard/internal/piadapter"
-	"github.com/jschool/custard/internal/protocol"
+	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/protocol"
 )
 
 // EngineConfig wires the engine to its environment. Emit is invoked on
@@ -21,7 +21,7 @@ import (
 // safe to call from there (wails EventsEmit is).
 type EngineConfig struct {
 	ConfigDir     string                 // app config dir (agent/, sessions/, settings.json inside)
-	ExtensionPath string                 // pi-extension/custard.ts
+	ExtensionPath string                 // pi-extension/coconut.ts
 	SelfPath      string                 // os.Executable(), for sidecar resolution
 	PickDir       func() (string, error) // native directory dialog
 	Emit          func(env any)
@@ -115,7 +115,7 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		pendingStreams: map[string]any{},
 	}
 	e.state.settings, e.state.settingsRaw = loadSettingsYAML(cfg.ConfigDir)
-	if extra := os.Getenv("CUSTARD_BASH_WHITELIST"); extra != "" {
+	if extra := os.Getenv("COCONUT_BASH_WHITELIST"); extra != "" {
 		e.state.settings.EnsureBashWhitelist(strings.Split(extra, ",")...)
 	}
 	e.state.app = loadState(cfg.ConfigDir)
