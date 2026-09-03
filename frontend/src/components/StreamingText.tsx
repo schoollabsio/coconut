@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
 
 const MemoMarkdown = memo(Markdown)
@@ -48,15 +48,25 @@ export function diffChunks(prevText: string, prevChunks: FadeChunk[], nextText: 
 }
 
 function FadingTail({ text }: { text: string }) {
-  const state = useRef<{ text: string; chunks: FadeChunk[]; counter: number }>({ text: '', chunks: [], counter: 0 })
-  const s = state.current
-  if (text !== s.text) {
-    s.chunks = diffChunks(s.text, s.chunks, text, ++s.counter)
-    s.text = text
-  }
+  // We track the previous rendered text and chunk list in refs, then use
+  // React state to drive re-renders after computing new chunks in an effect.
+  // This avoids mutating during render (an anti-pattern that breaks
+  // animation triggering under React 18 StrictMode double-invocation).
+  const [chunks, setChunks] = useState<FadeChunk[]>([])
+  const prevTextRef = useRef('')
+  const counterRef = useRef(0)
+
+  useEffect(() => {
+    if (text !== prevTextRef.current) {
+      const nextId = ++counterRef.current
+      setChunks((prev) => diffChunks(prevTextRef.current, prev, text, nextId))
+      prevTextRef.current = text
+    }
+  }, [text])
+
   return (
-    <span className="whitespace-pre-wrap">
-      {s.chunks.map((c) => (
+    <span className="whitespace-pre-wrap text-mute">
+      {chunks.map((c) => (
         <span key={c.id} className="token-fade">
           {c.text}
         </span>
