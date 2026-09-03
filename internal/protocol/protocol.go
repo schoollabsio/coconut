@@ -240,6 +240,7 @@ type ToolCall struct {
 	Tool       string `json:"tool"`           // pi toolName: read, run, propose_edit, show_content, …
 	Label      string `json:"label"`          // display line, e.g. "Read App.tsx"
 	Path       string `json:"path,omitempty"` // primary file, if any
+	What       string `json:"what,omitempty"` // approval's action description, if any
 	Status     string `json:"status"`
 	ApprovalID string `json:"approvalId,omitempty"`
 }

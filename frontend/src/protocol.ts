@@ -121,6 +121,7 @@ export interface ToolCall {
   tool: string
   label: string
   path?: string
+  what?: string
   status: ToolCallStatus
   approvalId?: string
 }

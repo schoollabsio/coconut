@@ -401,6 +401,7 @@ func (e *Engine) registerApprovalLocked(approval protocol.ApprovalRequest, piReq
 		if call := e.state.findToolCall(toolCallID); call != nil {
 			call.Status = protocol.ToolPendingApproval
 			call.ApprovalID = approval.ID
+			call.What = approval.What
 		}
 	}
 	e.setStatus(protocol.StatusAwaitingApproval, "")
