@@ -3,9 +3,54 @@ import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import { useUIState } from '../store'
 import { Markdown } from './Markdown'
-import { StreamingText } from './StreamingText'
+import { FadingTail, StreamingText } from './StreamingText'
 
 const MAX_INPUT_HEIGHT = 160
+
+function formatThinkingDuration(ms: number): string {
+  const secs = Math.round(ms / 1000)
+  if (secs < 60) return `${secs} ${secs === 1 ? 'second' : 'seconds'}`
+  const mins = Math.round(secs / 60)
+  return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`
+}
+
+function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
+  const [expanded, setExpanded] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll to bottom as new thinking tokens arrive.
+  useEffect(() => {
+    if (!thinkingDone && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [thinking, thinkingDone])
+
+  if (thinkingDone) {
+    return (
+      <div className="mb-2">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs italic text-dim hover:text-muted transition-colors cursor-pointer text-left"
+        >
+          Thought for {thinkingMs ? formatThinkingDuration(thinkingMs) : 'a moment'}
+        </button>
+        {expanded && (
+          <div className="mt-1 text-xs italic text-dim max-h-[10lh] overflow-y-auto whitespace-pre-wrap">
+            {thinking}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Still streaming — show full, scrollable content with per-token fade-in.
+  return (
+    <div ref={scrollRef} className="mb-2 text-xs italic text-dim max-h-[10lh] overflow-y-auto whitespace-pre-wrap">
+      <FadingTail text={thinking} className="text-dim" />
+    </div>
+  )
+}
 
 export function Chat({ client }: { client: BackendClient }) {
   const messages = useUIState((s) => s.agent.messages)
@@ -59,15 +104,31 @@ export function Chat({ client }: { client: BackendClient }) {
             </div>
           ) : (
             <div key={m.id}>
-              {m.streaming ? <StreamingText text={m.text} /> : <Markdown text={m.text} />}
+              {m.thinking && m.thinking.length > 0 && (
+                <ThinkingBlock
+                  thinking={m.thinking}
+                  thinkingDone={!!m.thinkingDone}
+                  thinkingMs={m.thinkingMs}
+                />
+              )}
+              {m.text && (m.streaming ? <StreamingText text={m.text} /> : <Markdown text={m.text} />)}
             </div>
           ),
         )}
-        {busy && !messages[messages.length - 1]?.streaming && (
-          <span className="text-dim text-sm italic subtle-pulse">
-            {status === 'awaiting_approval' ? 'waiting for your approval…' : 'Thinking…'}
-          </span>
-        )}
+        {busy && !messages[messages.length - 1]?.streaming &&
+          (status === 'awaiting_approval' ? (
+            <span className="text-dim text-sm italic subtle-pulse">
+              waiting for your approval…
+            </span>
+          ) : (
+            <span className="text-dim text-sm italic flex items-center gap-2">
+              <svg className="w-3.5 h-3.5 animate-spin text-dim" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.3" />
+                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Thinking…
+            </span>
+          ))}
       </div>
 
       <form

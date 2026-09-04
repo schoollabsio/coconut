@@ -38,6 +38,39 @@
       "emit": {
         "type": "message_update",
         "assistantMessageEvent": {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "Let me look at the delete button issue..."
+        }
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": " The handler uses array index instead of todo.id."
+        }
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "Let me look at the delete button issue... The handler uses array index instead of todo.id."
+        }
+      },
+      "delayMs": 30
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
           "type": "text_delta",
           "contentIndex": 0,
           "delta": "I see the bug. "
@@ -330,6 +363,39 @@
         }
       },
       "delayMs": 20
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": "Marking todos complete requires a toggle..."
+        }
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_delta",
+          "contentIndex": 0,
+          "delta": " I'll add a checkbox and a line-through style."
+        }
+      },
+      "delayMs": 50
+    },
+    {
+      "emit": {
+        "type": "message_update",
+        "assistantMessageEvent": {
+          "type": "thinking_end",
+          "contentIndex": 0,
+          "content": "Marking todos complete requires a toggle... I'll add a checkbox and a line-through style."
+        }
+      },
+      "delayMs": 30
     },
     {
       "emit": {

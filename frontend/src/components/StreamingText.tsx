@@ -23,7 +23,7 @@ export function StreamingText({ text }: { text: string }) {
   return (
     <>
       {committed && <MemoMarkdown text={committed} />}
-      <FadingTail text={tail} />
+      <FadingTail text={tail} className="text-mute" />
     </>
   )
 }
@@ -47,7 +47,7 @@ export function diffChunks(prevText: string, prevChunks: FadeChunk[], nextText: 
   return [{ id: nextId, text: nextText }]
 }
 
-function FadingTail({ text }: { text: string }) {
+export function FadingTail({ text, className }: { text: string; className?: string }) {
   // We track the previous rendered text and chunk list in refs, then use
   // React state to drive re-renders after computing new chunks in an effect.
   // This avoids mutating during render (an anti-pattern that breaks
@@ -65,7 +65,7 @@ function FadingTail({ text }: { text: string }) {
   }, [text])
 
   return (
-    <span className="whitespace-pre-wrap text-mute">
+    <span className={`whitespace-pre-wrap${className ? ` ${className}` : ''}`}>
       {chunks.map((c) => (
         <span key={c.id} className="token-fade">
           {c.text}

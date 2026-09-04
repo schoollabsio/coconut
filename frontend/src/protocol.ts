@@ -94,11 +94,13 @@ export const Ev = {
   WindowStateChanged: 'window.state.changed',
   SettingsChanged: 'settings.changed',
   Notification: 'notification.created',
+  AgentThinkingCompleted: 'agent.thinking.completed',
 } as const
 
 export const Stream = {
   AgentToken: 'agent.token',
   ToolOutput: 'agent.tool.output',
+  AgentThinking: 'agent.thinking',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,9 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
   streaming?: boolean
+  thinking?: string
+  thinkingDone?: boolean
+  thinkingMs?: number
 }
 
 export type ToolCallStatus = 'running' | 'done' | 'error' | 'pending_approval'
@@ -208,6 +213,16 @@ export interface WorkspaceChangedPayload {
 export interface TokenPayload {
   messageId: string
   text: string // cumulative
+}
+
+export interface ThinkingPayload {
+  messageId: string
+  text: string // cumulative reasoning content
+}
+
+export interface ThinkingCompletedPayload {
+  messageId: string
+  durationMs: number
 }
 
 export interface WindowStatePayload {

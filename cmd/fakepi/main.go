@@ -301,6 +301,13 @@ func (s *server) cannedFlow() {
 	s.emitEvent(map[string]any{"type": "message_start", "message": map[string]any{
 		"role": "assistant", "content": []any{map[string]any{"type": "text", "text": ""}},
 	}})
+	// Brief thinking block before the reply text.
+	s.emitEvent(thinkingDelta("Let me think about this..."))
+	s.emitEvent(thinkingDelta(" I should provide a helpful response."))
+	s.emitEvent(map[string]any{"type": "message_update", "assistantMessageEvent": map[string]any{
+		"type": "thinking_end", "contentIndex": 0,
+		"content": "Let me think about this... I should provide a helpful response.",
+	}})
 	s.emitEvent(textDelta(reply[:half]))
 	time.Sleep(20 * time.Millisecond)
 	s.emitEvent(textDelta(reply[half:]))
@@ -410,6 +417,15 @@ func textDelta(delta string) map[string]any {
 		"type": "message_update",
 		"assistantMessageEvent": map[string]any{
 			"type": "text_delta", "contentIndex": 0, "delta": delta,
+		},
+	}
+}
+
+func thinkingDelta(delta string) map[string]any {
+	return map[string]any{
+		"type": "message_update",
+		"assistantMessageEvent": map[string]any{
+			"type": "thinking_delta", "contentIndex": 0, "delta": delta,
 		},
 	}
 }

@@ -84,8 +84,8 @@ const (
 	CmdSessionRestore   = "session.restore" // startup bootstrap: reopen last agent
 	CmdAgentOpen        = "agent.open"      // open an agent (+ optional session)
 	CmdAgentRename      = "agent.rename"
-	CmdAgentReset       = "agent.reset" // new underlying pi session, same agent
-	CmdAgentList        = "agent.list"  // scan workspace agents + sessions
+	CmdAgentReset       = "agent.reset"    // new underlying pi session, same agent
+	CmdAgentList        = "agent.list"     // scan workspace agents + sessions
 	CmdWorkspacePick    = "workspace.pick" // opens native dir picker
 	CmdWorkspaceSet     = "workspace.set"
 	CmdAgentStart       = "agent.start"
@@ -101,29 +101,31 @@ const (
 // ---------------------------------------------------------------------------
 
 const (
-	EvSessionRestored    = "session.restored" // agent opened / session switched
-	EvWorkspaceChanged   = "workspace.changed"
-	EvAgentReset         = "agent.session.reset" // new session started in place
-	EvAgentStarted       = "agent.started"
-	EvAgentStatusChanged = "agent.status.changed"
-	EvAgentMessage       = "agent.message.appended"
-	EvAgentToolStarted   = "agent.tool.started"
-	EvAgentToolCompleted = "agent.tool.completed"
-	EvApprovalRequested  = "agent.approval.requested"
-	EvApprovalResolved   = "agent.approval.resolved"
-	EvAgentCompleted     = "agent.completed"
-	EvAgentFailed        = "agent.failed"
-	EvSidecarLost        = "agent.sidecar.lost"
-	EvContentUpdated     = "content.updated"
-	EvWindowStateChanged = "window.state.changed"
-	EvSettingsChanged    = "settings.changed"
-	EvNotification       = "notification.created"
+	EvSessionRestored        = "session.restored" // agent opened / session switched
+	EvWorkspaceChanged       = "workspace.changed"
+	EvAgentReset             = "agent.session.reset" // new session started in place
+	EvAgentStarted           = "agent.started"
+	EvAgentStatusChanged     = "agent.status.changed"
+	EvAgentMessage           = "agent.message.appended"
+	EvAgentToolStarted       = "agent.tool.started"
+	EvAgentToolCompleted     = "agent.tool.completed"
+	EvApprovalRequested      = "agent.approval.requested"
+	EvApprovalResolved       = "agent.approval.resolved"
+	EvAgentCompleted         = "agent.completed"
+	EvAgentFailed            = "agent.failed"
+	EvSidecarLost            = "agent.sidecar.lost"
+	EvContentUpdated         = "content.updated"
+	EvWindowStateChanged     = "window.state.changed"
+	EvSettingsChanged        = "settings.changed"
+	EvNotification           = "notification.created"
+	EvAgentThinkingCompleted = "agent.thinking.completed"
 )
 
 // Stream (unsequenced) names.
 const (
-	StreamAgentToken = "agent.token" // payload: TokenPayload (cumulative)
-	StreamToolOutput = "agent.tool.output"
+	StreamAgentToken    = "agent.token" // payload: TokenPayload (cumulative)
+	StreamToolOutput    = "agent.tool.output"
+	StreamAgentThinking = "agent.thinking" // payload: ThinkingPayload (cumulative)
 )
 
 // ---------------------------------------------------------------------------
@@ -221,10 +223,13 @@ const (
 )
 
 type ChatMessage struct {
-	ID        string `json:"id"`
-	Role      string `json:"role"` // "user" | "assistant"
-	Text      string `json:"text"`
-	Streaming bool   `json:"streaming,omitempty"`
+	ID           string `json:"id"`
+	Role         string `json:"role"` // "user" | "assistant"
+	Text         string `json:"text"`
+	Streaming    bool   `json:"streaming,omitempty"`
+	Thinking     string `json:"thinking,omitempty"`     // accumulated reasoning content
+	ThinkingDone bool   `json:"thinkingDone,omitempty"` // thinking block has ended
+	ThinkingMs   int64  `json:"thinkingMs,omitempty"`   // duration of reasoning in milliseconds
 }
 
 // Tool call statuses.
@@ -312,6 +317,22 @@ type TokenPayload struct {
 type ToolOutputPayload struct {
 	ToolCallID string `json:"toolCallId"`
 	Text       string `json:"text"` // cumulative partial output
+}
+
+// ThinkingPayload carries the CUMULATIVE reasoning content of the in-flight
+// assistant message (parallel to TokenPayload for text).
+
+type ThinkingPayload struct {
+	MessageID string `json:"messageId"`
+	Text      string `json:"text"` // cumulative reasoning text
+}
+
+// ThinkingCompletedPayload is emitted when a thinking block ends, reporting
+// how long the reasoning took so the UI can render "Thought for X seconds".
+
+type ThinkingCompletedPayload struct {
+	MessageID  string `json:"messageId"`
+	DurationMs int64  `json:"durationMs"`
 }
 
 // ---------------------------------------------------------------------------

@@ -45,10 +45,13 @@ func (s *server) observeEvent(ev map[string]any) {
 		s.st.beginAssistant()
 	case "message_update":
 		if ame, ok := ev["assistantMessageEvent"].(map[string]any); ok {
-			if ame["type"] == "text_delta" {
+			switch ame["type"] {
+			case "text_delta":
 				if d, _ := ame["delta"].(string); d != "" {
 					s.st.appendDelta(d)
 				}
+			case "thinking_delta":
+				// thinking text is not part of the message text
 			}
 		}
 	case "message_end":

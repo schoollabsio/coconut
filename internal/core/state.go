@@ -31,6 +31,12 @@ type domainState struct {
 	msgCounter  int
 	toolCounter int
 
+	// reasoning content assembly (parallel to text streaming above)
+	thinkText  string
+	thinkStart time.Time
+	thinking   bool
+	thinkMs    int64
+
 	// pi-side correlation
 	toolArgs    map[string]toolStartInfo // toolCallId → args snapshot
 	pendingByID map[string]pendingApproval
@@ -73,6 +79,10 @@ func (s *domainState) resetAgent() {
 	s.streaming = false
 	s.toolArgs = map[string]toolStartInfo{}
 	s.pendingByID = map[string]pendingApproval{}
+	s.thinkText = ""
+	s.thinkStart = time.Time{}
+	s.thinking = false
+	s.thinkMs = 0
 }
 
 func (s *domainState) workspaceInfo() protocol.WorkspaceInfo {
@@ -89,10 +99,13 @@ func (s *domainState) snapshot() protocol.SnapshotState {
 		// Include the in-flight assistant message so a resyncing
 		// frontend sees partial text.
 		msgs = append(msgs, protocol.ChatMessage{
-			ID:        s.streamMsgID,
-			Role:      "assistant",
-			Text:      s.streamText,
-			Streaming: true,
+			ID:           s.streamMsgID,
+			Role:         "assistant",
+			Text:         s.streamText,
+			Streaming:    true,
+			Thinking:     s.thinkText,
+			ThinkingDone: !s.thinking,
+			ThinkingMs:   s.thinkMs,
 		})
 	}
 	calls := make([]protocol.ToolCall, len(s.toolCalls))
@@ -136,6 +149,10 @@ func (s *domainState) beginStream() {
 	s.streamMsgID = msgID(s.msgCounter)
 	s.streamText = ""
 	s.streaming = true
+	s.thinkText = ""
+	s.thinkStart = time.Time{}
+	s.thinking = false
+	s.thinkMs = 0
 }
 
 func (s *domainState) endStream(finalText string) protocol.ChatMessage {
@@ -144,15 +161,29 @@ func (s *domainState) endStream(finalText string) protocol.ChatMessage {
 	}
 	s.streaming = false
 	s.streamText = ""
+	thinkText := s.thinkText
+	thinkMs := s.thinkMs
+	thinking := s.thinking
+	// Finalize thinking if it hasn't been ended already.
+	if thinking {
+		thinkMs = time.Since(s.thinkStart).Milliseconds()
+		s.thinking = false
+	}
+	s.thinkText = ""
+	s.thinkStart = time.Time{}
+	s.thinkMs = 0
 	if strings.TrimSpace(finalText) == "" {
 		// Tool-call-only assistant turns carry no prose; emitting them
 		// would render an empty bubble (just the ✦ icon) in the chat.
 		return protocol.ChatMessage{}
 	}
 	msg := protocol.ChatMessage{
-		ID:   s.streamMsgID,
-		Role: "assistant",
-		Text: finalText,
+		ID:           s.streamMsgID,
+		Role:         "assistant",
+		Text:         finalText,
+		Thinking:     thinkText,
+		ThinkingDone: true,
+		ThinkingMs:   thinkMs,
 	}
 	s.messages = append(s.messages, msg)
 	return msg

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jschool/coconut/internal/piadapter"
 	"github.com/jschool/coconut/internal/protocol"
@@ -34,6 +35,11 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		}
 		switch m.AssistantMessageEvent.Type {
 		case "text_delta":
+			// If thinking is still active (the provider didn't emit
+			// thinking_end), finalize it now that text has begun.
+			if e.state.thinking {
+				e.finalizeThinkingLocked()
+			}
 			if !e.state.streaming {
 				e.state.beginStream()
 			}
@@ -45,8 +51,25 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 				MessageID: e.state.streamMsgID,
 				Text:      e.state.streamText,
 			})
+		case "thinking_delta":
+			if !e.state.streaming {
+				e.state.beginStream()
+			}
+			if !e.state.thinking {
+				e.state.thinking = true
+				e.state.thinkStart = time.Now()
+			}
+			e.state.thinkText += m.AssistantMessageEvent.Delta
+			e.emitStream(protocol.StreamAgentThinking, protocol.ThinkingPayload{
+				MessageID: e.state.streamMsgID,
+				Text:      e.state.thinkText,
+			})
+		case "thinking_end":
+			if e.state.thinking {
+				e.finalizeThinkingLocked()
+			}
 		default:
-			// thinking_* / toolcall_* deltas: not surfaced in v1 UI.
+			// toolcall_*, text_start/text_end, etc: not surfaced in v1 UI.
 		}
 
 	case "message_end":
@@ -70,6 +93,11 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 			if c.Type == "text" && c.Text != "" {
 				parts = append(parts, c.Text)
 			}
+		}
+		// Finalize any thinking that didn't get an explicit thinking_end
+		// before the message closed.
+		if e.state.thinking {
+			e.finalizeThinkingLocked()
 		}
 		msg := e.state.endStream(strings.Join(parts, "\n\n"))
 		if msg.ID != "" {
@@ -237,6 +265,21 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		// turn_start/turn_end, queue_update, bash_execution_update,
 		// summarization_*: not surfaced in v1.
 	}
+}
+
+// finalizeThinkingLocked marks the end of the current thinking block,
+// computes its duration, and emits agent.thinking.completed.
+func (e *Engine) finalizeThinkingLocked() {
+	if !e.state.thinking {
+		return
+	}
+	e.state.thinking = false
+	ms := time.Since(e.state.thinkStart).Milliseconds()
+	e.state.thinkMs = ms
+	e.emitEvent(protocol.EvAgentThinkingCompleted, protocol.ThinkingCompletedPayload{
+		MessageID:  e.state.streamMsgID,
+		DurationMs: ms,
+	}, "")
 }
 
 // setStatus emits agent.status.changed on transitions only.

@@ -18,6 +18,8 @@ import type {
   SettingsYAML,
   SnapshotMessage,
   StreamMessage,
+  ThinkingCompletedPayload,
+  ThinkingPayload,
   ToolCall,
   WindowStatePayload,
   WorkspaceChangedPayload,
@@ -251,6 +253,16 @@ export class UIStore {
         })
         break
       }
+      case Ev.AgentThinkingCompleted: {
+        const tp = p as unknown as ThinkingCompletedPayload
+        const messages = [...this.state.agent.messages]
+        const idx = messages.findIndex((m) => m.id === tp.messageId)
+        if (idx >= 0) {
+          messages[idx] = { ...messages[idx], thinkingDone: true, thinkingMs: tp.durationMs }
+        }
+        this.setAgent({ messages })
+        break
+      }
       case Ev.AgentCompleted:
         // Finalize any messages still marked streaming — a RAF-buffered
         // token stream may have set streaming:true just before we here.
@@ -354,6 +366,22 @@ export class UIStore {
   }
 
   private applyStream(name: string, payload: unknown) {
+    if (name === Stream.AgentThinking) {
+      const { messageId, text } = payload as ThinkingPayload
+      const messages = [...this.state.agent.messages]
+      const idx = messages.findIndex((m) => m.id === messageId)
+      if (idx >= 0) {
+        // Preserve thinkingDone if the completed event already set it
+        // (events apply synchronously; streams are RAF-buffered).
+        messages[idx] = { ...messages[idx], thinking: text }
+      } else {
+        messages.push({ id: messageId, role: 'assistant', text: '', thinking: text, thinkingDone: false })
+      }
+      // Don't change agent status — thinking is the "thinking" phase of
+      // the status, parallel to text streaming which flips to 'streaming'.
+      this.state = { ...this.state, agent: { ...this.state.agent, messages } }
+      return
+    }
     if (name !== Stream.AgentToken) return
     // A RAF-buffered token stream can flush *after* agent.completed fires
     // (streams are unsequenced; events are processed synchronously).  Guard
