@@ -1,12 +1,13 @@
 # Build
 /build/bin
 /frontend/dist
-/frontend/node_modules
 /coconut
 
 # Pi sidecar artifacts
-/pi-extension/node_modules
 /build/sidecar
+
+# Dependencies — ignore node_modules anywhere in the repo
+node_modules/
 
 # OS
 .DS_Store
