@@ -5,6 +5,8 @@
 
 # Pi sidecar artifacts
 /build/sidecar
+# Local fakepi dev binary (COCONUT_PI_BINARY override; canonical build is /build/bin/fakepi)
+/fakepi
 
 # Dependencies — ignore node_modules anywhere in the repo
 node_modules/
