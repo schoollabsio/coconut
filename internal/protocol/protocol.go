@@ -241,6 +241,7 @@ type ToolCall struct {
 	Label      string `json:"label"`          // display line, e.g. "Read App.tsx"
 	Path       string `json:"path,omitempty"` // primary file, if any
 	What       string `json:"what,omitempty"` // approval's action description, if any
+	Why        string `json:"why,omitempty"`  // rationale for the tool call, if provided
 	Status     string `json:"status"`
 	ApprovalID string `json:"approvalId,omitempty"`
 }

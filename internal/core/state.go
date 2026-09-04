@@ -40,6 +40,8 @@ type toolStartInfo struct {
 	ToolName string
 	Path     string
 	Command  string
+	What     string // tool call's action description, if provided
+	Why      string // tool call's rationale, if provided
 	Content  string // show_content composed-document payload
 	File     string // show_content render-an-existing-file payload
 	Args     map[string]any

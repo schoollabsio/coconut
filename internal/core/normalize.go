@@ -101,6 +101,12 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		if f, ok := m.Args["file"].(string); ok {
 			info.File = f
 		}
+		if w, ok := m.Args["what"].(string); ok {
+			info.What = w
+		}
+		if w, ok := m.Args["why"].(string); ok {
+			info.Why = w
+		}
 		e.state.toolArgs[m.ToolCallID] = info
 
 		call := protocol.ToolCall{
@@ -108,6 +114,8 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 			Tool:   m.ToolName,
 			Label:  toolLabel(m.ToolName, info),
 			Path:   info.Path,
+			What:   info.What,
+			Why:    info.Why,
 			Status: protocol.ToolRunning,
 		}
 		e.state.toolCalls = append(e.state.toolCalls, call)

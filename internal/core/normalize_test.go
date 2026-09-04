@@ -242,3 +242,43 @@ func TestApprovedToolEndDoesNotDoubleResolve(t *testing.T) {
 		t.Fatalf("approval.resolved emitted %d times, want exactly 1 (from the respond path)", count)
 	}
 }
+
+// Whitelisted run commands skip the approval bridge entirely (no
+// extension_ui_request), but they still pass what/why in their tool args.
+// Those must be captured at tool_execution_start so the ToolLog can render
+// the human-readable description — not just the truncated command label.
+func TestWhitelistedRunCapturesWhatWhy(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulates an agent calling the `run` tool for a whitelisted command.
+	// The what/why are required by the run schema and appear in tool args,
+	// even though no approval dialog will follow (the command is whitelisted).
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc1","toolName":"run","args":{"command":"ls -la","what":"List project files in the current directory","why":"Need to see the directory structure before editing"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"tc1","toolName":"run","isError":false}`)
+
+	if len(engine.state.toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(engine.state.toolCalls))
+	}
+	call := engine.state.toolCalls[0]
+	if call.What != "List project files in the current directory" {
+		t.Errorf("What = %q, want the action description from tool args", call.What)
+	}
+	if call.Why != "Need to see the directory structure before editing" {
+		t.Errorf("Why = %q, want the rationale from tool args", call.Why)
+	}
+	if call.Status != protocol.ToolDone {
+		t.Errorf("Status = %q, want %s", call.Status, protocol.ToolDone)
+	}
+	if len(engine.state.approvals) != 0 {
+		t.Errorf("whitelisted run should not create an approval, got %d", len(engine.state.approvals))
+	}
+	if _, _, ok := collector.find(t, func(envType, name string, _ json.RawMessage) bool {
+		return envType == "event" && name == protocol.EvApprovalRequested
+	}); ok {
+		t.Fatal("approval.requested emitted for a whitelisted run command")
+	}
+}

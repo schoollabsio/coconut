@@ -77,6 +77,7 @@ export function ToolLog() {
               className="px-2.5 py-1.5 text-mute truncate flex items-center gap-2"
               onMouseEnter={() => setHoveredToolCallId(call.id)}
               onMouseLeave={() => setHoveredToolCallId(null)}
+              title={call.why || undefined}
             >
               {call.status === 'running' && (
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />
@@ -97,7 +98,11 @@ export function ToolLog() {
         }
 
         return (
-          <div key={call.id} className="px-2.5 py-1.5 text-mute truncate flex items-center gap-2">
+          <div
+            key={call.id}
+            className="px-2.5 py-1.5 text-mute truncate flex items-center gap-2"
+            title={call.why || undefined}
+          >
             {call.status === 'running' && (
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />
             )}
