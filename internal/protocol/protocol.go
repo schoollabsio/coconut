@@ -249,6 +249,7 @@ type ToolCall struct {
 	Why        string `json:"why,omitempty"`  // rationale for the tool call, if provided
 	Status     string `json:"status"`
 	ApprovalID string `json:"approvalId,omitempty"`
+	GroupLabel string `json:"groupLabel,omitempty"` // agent-assigned label for tool call grouping
 }
 
 // Approval kinds.
@@ -278,6 +279,7 @@ type ApprovalResolvedPayload struct {
 type ContentDoc struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
+	Format    string `json:"format"`    // "markdown" (default) | "html"
 	UpdatedAt int64  `json:"updatedAt"` // unix ms
 }
 

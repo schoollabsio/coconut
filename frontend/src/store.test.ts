@@ -170,3 +170,68 @@ describe('approval focus reconciliation', () => {
     expect(s.state.focusedApprovalId).toBe('ap-1')
   })
 })
+
+describe('group collapse state', () => {
+  it('starts collapsed (empty expanded set)', () => {
+    const s = new UIStore()
+    expect(s.state.expandedGroups).toBeInstanceOf(Set)
+    expect(s.state.expandedGroups.size).toBe(0)
+  })
+
+  it('toggleGroup adds then removes a key', () => {
+    const s = new UIStore()
+    s.toggleGroup('read-c1')
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true)
+    s.toggleGroup('read-c1')
+    expect(s.state.expandedGroups.has('read-c1')).toBe(false)
+    expect(s.state.expandedGroups.size).toBe(0)
+  })
+
+  it('collapseGroup removes a key (no-op if absent)', () => {
+    const s = new UIStore()
+    s.expandGroup('read-c1') // start expanded
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true)
+    s.collapseGroup('read-c1')
+    expect(s.state.expandedGroups.has('read-c1')).toBe(false)
+    s.collapseGroup('read-c1') // no-op — already absent
+    expect(s.state.expandedGroups.size).toBe(0)
+  })
+
+  it('expandGroup adds a key (no-op if already present)', () => {
+    const s = new UIStore()
+    s.expandGroup('read-c1')
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true)
+    s.expandGroup('read-c1') // no-op
+    expect(s.state.expandedGroups.size).toBe(1)
+  })
+
+  it('preserves expandedGroups across a snapshot resync', () => {
+    const s = new UIStore()
+    s.expandGroup('read-c1')
+    s.applyBackendMessage(snap(5))
+    // Snapshot does not carry expandedGroups — preserved via set() spread.
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true)
+  })
+
+  it('clears expandedGroups on AgentReset', () => {
+    const s = new UIStore()
+    s.expandGroup('read-c1')
+    s.expandGroup('read-c3')
+    expect(s.state.expandedGroups.size).toBeGreaterThan(0)
+    s.applyBackendMessage(ev(2, Ev.AgentReset))
+    expect(s.state.expandedGroups).toBeInstanceOf(Set)
+    expect(s.state.expandedGroups.size).toBe(0)
+  })
+
+  it('does not affect expandedGroups on approval resolve', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AgentToolStarted, { id: 'c1', tool: 'propose_edit', label: 'Edit foo.ts', status: 'running' }))
+    s.applyBackendMessage(ev(3, Ev.ApprovalRequested, { id: 'ap-1', kind: 'propose_edit', title: 'Edit foo.ts', path: 'foo.ts', what: 'w', why: 'y', diff: '+x' }))
+    s.expandGroup('read-c1')
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true)
+    s.applyBackendMessage(ev(4, Ev.AgentToolCompleted, { toolCallId: 'c1', status: 'done' }))
+    s.applyBackendMessage(ev(5, Ev.ApprovalResolved, { approvalId: 'ap-1', decision: 'allow' }))
+    expect(s.state.expandedGroups.has('read-c1')).toBe(true) // untouched
+  })
+})

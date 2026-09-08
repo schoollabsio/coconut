@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,7 +116,14 @@ func (e *Engine) startSidecarLocked(agentSlug, switchTo string, fresh bool, done
 			agent.Name = st.SessionName
 		}
 
+		sessionFile := st.SessionFile
+
 		finish := func() {
+			// Tool call reconstruction (synchronous file read) and
+			// message reconstruction (async pi RPC) are independent
+			// siblings — no semantic ordering. Run the sync one
+			// first, then kick off the async message fetch.
+			e.rebuildToolCallsLocked(sessionFile)
 			e.rebuildMessagesLocked(func() {
 				e.emitEvent(protocol.EvSessionRestored, map[string]any{
 					"workspacePath": e.state.workspacePath,
@@ -143,6 +151,7 @@ func (e *Engine) startSidecarLocked(agentSlug, switchTo string, fresh bool, done
 					e.notify("warning", "could not restore previous session; starting fresh")
 				} else {
 					agent.LastSessionFile = target
+					sessionFile = target
 					_ = saveState(e.cfg.ConfigDir, e.state.app)
 				}
 				finish()
@@ -161,6 +170,250 @@ func (e *Engine) rebuildMessagesLocked(done func()) {
 		}
 		done()
 	})
+}
+
+// rebuildToolCallsLocked reads the pi session transcript file and
+// reconstructs tool call history (and the most recent show_content
+// content doc) into domain state. Synchronous — it's a file read, not a
+// pi RPC, so no callback is needed (unlike rebuildMessagesLocked).
+// Actor-only.
+func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
+	if sessionFile == "" {
+		return
+	}
+
+	f, err := os.Open(sessionFile)
+	if err != nil {
+		// File doesn't exist (e.g. very first run) — nothing to restore.
+		return
+	}
+	defer f.Close()
+
+	type tcEntry struct {
+		id         string
+		tool       string
+		label      string
+		path       string
+		what       string
+		why        string
+		groupLabel string
+		status     string
+	}
+
+	calls := map[string]*tcEntry{}
+	var order []string
+	var lastShowContentArgs map[string]any
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	toolCallCounter := 0
+	for scanner.Scan() {
+		var line struct {
+			Type       string         `json:"type"`
+			ToolCallID string         `json:"toolCallId"`
+			ToolName   string         `json:"toolName"`
+			Args       map[string]any `json:"args"`
+			IsError    bool           `json:"isError"`
+			Title      string         `json:"title"`
+			MessageRaw json.RawMessage `json:"message"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
+			continue
+		}
+
+		switch line.Type {
+		case "tool_execution_start":
+			info := extractToolArgs(line.ToolName, line.Args)
+			entry := &tcEntry{
+				id:         line.ToolCallID,
+				tool:       line.ToolName,
+				path:       info.Path,
+				what:       info.What,
+				why:        info.Why,
+				groupLabel: info.GroupLabel,
+				status:     protocol.ToolDone, // all historical calls are done
+			}
+			entry.label = toolLabel(line.ToolName, info)
+			calls[line.ToolCallID] = entry
+			order = append(order, line.ToolCallID)
+
+			// Track the most recent show_content args for content restoration.
+			if line.ToolName == "show_content" && line.Args != nil {
+				lastShowContentArgs = line.Args
+			}
+
+		case "tool_execution_end":
+			entry, ok := calls[line.ToolCallID]
+			if !ok {
+				continue
+			}
+			if line.IsError {
+				entry.status = protocol.ToolError
+			} else {
+				entry.status = protocol.ToolDone
+				// Restore content for the last successful show_content call.
+				if entry.tool == "show_content" && lastShowContentArgs != nil {
+					e.restoreContentFromArgs(lastShowContentArgs)
+				}
+			}
+
+		case "extension_ui_request":
+			// Approval requests carry the final what/why for the tool call.
+			// Update the matching entry to match live behavior (where
+			// registerApprovalLocked overwrites call.What with approval.What).
+			if !strings.HasPrefix(line.Title, "coconut://") {
+				continue
+			}
+			var msgData struct {
+				ToolCallID string `json:"toolCallId"`
+				What       string `json:"what"`
+				Why        string `json:"why"`
+			}
+			if err := json.Unmarshal(line.MessageRaw, &msgData); err != nil {
+				continue
+			}
+			if entry, ok := calls[msgData.ToolCallID]; ok {
+				entry.what = msgData.What
+				entry.why = msgData.Why
+			}
+
+		case "message":
+			// v3 transcript format — used by the real pi on disk. Tool
+			// calls are embedded as toolCall content blocks within
+			// assistant messages (not separate RPC events).
+			var msg struct {
+				Role    string `json:"role"`
+				Content []struct {
+					Type       string         `json:"type"`
+					Name       string         `json:"name"`
+					ID         string         `json:"id"`
+					Arguments  map[string]any `json:"arguments"`
+				} `json:"content"`
+			}
+			if err := json.Unmarshal(line.MessageRaw, &msg); err != nil {
+				continue
+			}
+			if msg.Role != "assistant" {
+				continue
+			}
+			for _, block := range msg.Content {
+				if block.Type != "toolCall" || block.Name == "" {
+					continue
+				}
+				info := extractToolArgs(block.Name, block.Arguments)
+				id := block.ID
+				if id == "" {
+					// v3 messages may omit the toolCallId; synthesize one.
+					toolCallCounter++
+					id = fmt.Sprintf("transcript-%d", toolCallCounter)
+				}
+				if _, exists := calls[id]; exists {
+					continue
+				}
+				entry := &tcEntry{
+					id:         id,
+					tool:       block.Name,
+					path:       info.Path,
+					what:       info.What,
+					why:        info.Why,
+					groupLabel: info.GroupLabel,
+					status:     protocol.ToolDone,
+				}
+				entry.label = toolLabel(block.Name, info)
+				calls[id] = entry
+				order = append(order, id)
+				if block.Name == "show_content" && block.Arguments != nil {
+					e.restoreContentFromArgs(block.Arguments)
+					lastShowContentArgs = block.Arguments
+				}
+			}
+		}
+	}
+
+	// Build the final tool calls slice, preserving encounter order.
+	e.state.toolCalls = make([]protocol.ToolCall, 0, len(order))
+	for _, id := range order {
+		entry := calls[id]
+			e.state.toolCalls = append(e.state.toolCalls, protocol.ToolCall{
+				ID:         entry.id,
+				Tool:       entry.tool,
+				Label:      entry.label,
+				Path:       entry.path,
+				What:       entry.what,
+				Why:        entry.why,
+				GroupLabel: entry.groupLabel,
+				Status:     entry.status,
+			})
+	}
+}
+
+// extractToolArgs builds a toolStartInfo from a tool execution's args
+// map, mirroring the inline extraction in normalize.go.
+func extractToolArgs(toolName string, args map[string]any) toolStartInfo {
+	info := toolStartInfo{ToolName: toolName, Args: args}
+	if v, ok := args["path"].(string); ok {
+		info.Path = v
+	}
+	if v, ok := args["command"].(string); ok {
+		info.Command = v
+	}
+	if v, ok := args["content"].(string); ok {
+		info.Content = v
+	}
+	if v, ok := args["file"].(string); ok {
+		info.File = v
+	}
+	if v, ok := args["format"].(string); ok {
+		info.Format = v
+	}
+	if v, ok := args["what"].(string); ok {
+		info.What = v
+	}
+	if v, ok := args["why"].(string); ok {
+		info.Why = v
+	}
+	if v, ok := args["groupLabel"].(string); ok {
+		info.GroupLabel = v
+	}
+	return info
+}
+
+// restoreContentFromArgs restores the content panel from a show_content
+// tool call's args. Mode A (path+content): uses the provided content.
+// Mode B (file): re-reads the file from disk. Actor-only.
+func (e *Engine) restoreContentFromArgs(args map[string]any) {
+	if args == nil {
+		return
+	}
+	format := "markdown"
+	if f, ok := args["format"].(string); ok {
+		format = contentFormat(f)
+	}
+	if file, ok := args["file"].(string); ok && file != "" {
+		path := file
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(e.state.workspacePath, file)
+		}
+		if data, err := os.ReadFile(path); err == nil {
+			e.state.content = &protocol.ContentDoc{
+				Path:      file,
+				Content:   string(data),
+				Format:    format,
+				UpdatedAt: nowMs(),
+			}
+		}
+		return
+	}
+	if path, ok := args["path"].(string); ok && path != "" {
+		content, _ := args["content"].(string)
+			e.state.content = &protocol.ContentDoc{
+				Path:      path,
+				Content:   content,
+				Format:    format,
+				UpdatedAt: nowMs(),
+			}
+	}
 }
 
 func (e *Engine) stopSidecarLocked() {
@@ -229,7 +482,15 @@ func buildLaunchSpec(cfg EngineConfig, s Settings, agentName, workspace, session
 		if sc := os.Getenv("COCONUT_PI_SCENARIO"); sc != "" {
 			args = append(args, "-scenario", sc)
 		}
-		return piadapter.LaunchSpec{Binary: binary, Args: args, Dir: workspace}
+		return piadapter.LaunchSpec{
+			Binary: binary,
+			Args:   args,
+			Dir:    workspace,
+			Env: []string{
+				"COCONUT_AGENT_ENV=" + filepath.Join(filepath.Dir(sessionDir), "env"),
+				"COCONUT_FAKEPI_TRANSCRIPT_DIR=" + sessionDir,
+			},
+		}
 	}
 
 	return piadapter.BuildLaunchSpec(piadapter.SidecarSettings{
@@ -238,6 +499,7 @@ func buildLaunchSpec(cfg EngineConfig, s Settings, agentName, workspace, session
 		APIKey:        sidecarAPIKey(s),
 		APIKeyEnv:     sidecarKeyEnvVars(s),
 		BashWhitelist: s.BashWhitelist,
+		AgentEnvFile:  filepath.Join(filepath.Dir(sessionDir), "env"),
 		SessionName:   agentName,
 	}, workspace, agentDir, sessionDir, cfg.ExtensionPath, binary)
 }

@@ -309,3 +309,152 @@ func TestWorkspacePickFlow(t *testing.T) {
 		t.Fatalf("snapshot workspace = %q, want %q", sm.State.Workspace.Path, workspace)
 	}
 }
+
+// TestSessionRestoresToolCalls verifies that when an engine restarts on
+// the same workspace, tool call history and the most recent show_content
+// content doc are reconstructed from the pi transcript JSONL file.
+func TestSessionRestoresToolCalls(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+
+	fakepi := buildFakepi(t)
+	scenario, err := filepath.Abs("../../testdata/scenarios/todo-app.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+	configDir := t.TempDir()
+
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", scenario)
+
+	waitToolCalls := func(snap protocol.Snapshot) bool {
+		var sawRead, sawPropose, sawShowContent, sawGroupLabel bool
+		for _, tc := range snap.State.Agent.ToolCalls {
+			if tc.Tool == "read" && tc.Status == protocol.ToolDone {
+				sawRead = true
+			}
+			if tc.Tool == "propose_edit" && tc.Status == protocol.ToolDone {
+				sawPropose = true
+			}
+			if tc.Tool == "show_content" && tc.Status == protocol.ToolDone {
+				sawShowContent = true
+			}
+			if tc.GroupLabel != "" && tc.Status == protocol.ToolDone {
+				sawGroupLabel = true
+			}
+		}
+		return sawRead && sawPropose && sawShowContent && sawGroupLabel
+	}
+
+	// approveAndWait runs a prompt → approval → approve → completed cycle.
+	// seenApprovals tracks IDs already responded to so waitFor skips stale
+	// approval.requested events from earlier turns.
+	seenApprovals := map[string]bool{}
+	approveAndWait := func(c *envelopeCollector, e *Engine, prompt string, t *testing.T) {
+		t.Helper()
+		resp := sendCommand(t, e, protocol.CmdAgentStart, map[string]any{"prompt": prompt})
+		if !resp.OK {
+			t.Fatalf("agent.start: %+v", resp.Error)
+		}
+		apl, ok := c.waitFor(t, 10*time.Second, "approval", func(envType, name string, p json.RawMessage) bool {
+			if envType != "event" || name != protocol.EvApprovalRequested {
+				return false
+			}
+			var apr protocol.ApprovalRequest
+			if err := json.Unmarshal(p, &apr); err != nil {
+				return false
+			}
+			return !seenApprovals[apr.ID]
+		})
+		if !ok {
+			t.Fatal("approval.requested never emitted")
+		}
+		var apr protocol.ApprovalRequest
+		if err := json.Unmarshal(apl, &apr); err != nil {
+			t.Fatalf("approval payload: %v", err)
+		}
+		seenApprovals[apr.ID] = true
+		resp = sendCommand(t, e, protocol.CmdApprovalRespond, map[string]any{
+			"approvalId": apr.ID,
+			"decision":   protocol.DecisionAllow,
+		})
+		if !resp.OK {
+			t.Fatalf("approval.respond: %+v", resp.Error)
+		}
+		if _, ok := c.waitFor(t, 10*time.Second, "completed", isEvent(protocol.EvAgentCompleted)); !ok {
+			t.Fatal("agent.completed never emitted")
+		}
+	}
+
+	// ---- Phase 1: run the scenario, verify tool calls + content ----
+	c1 := &envelopeCollector{}
+	engine1, err := NewEngine(EngineConfig{ConfigDir: configDir, Emit: c1.emit})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	go engine1.Run(ctx1)
+
+	resp := sendCommand(t, engine1, protocol.CmdWorkspaceSet, map[string]any{"path": workspace})
+	if !resp.OK {
+		t.Fatalf("workspace.set: %+v", resp.Error)
+	}
+	if _, ok := c1.waitFor(t, 10*time.Second, "session.restored", isEvent(protocol.EvSessionRestored)); !ok {
+		t.Fatal("session.restored never emitted (phase 1)")
+	}
+
+	// Turn 1: delete button fix.
+	approveAndWait(c1, engine1, "The delete button in my todo app isn't doing anything", t)
+	// Turn 2: mark-todo-complete + show_content.
+	approveAndWait(c1, engine1, "mark complete", t)
+
+	var snap1 protocol.Snapshot
+	if err := json.Unmarshal(engine1.RequestSnapshot(), &snap1); err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if !waitToolCalls(snap1) {
+		t.Fatalf("phase 1: missing tool calls: %+v", snap1.State.Agent.ToolCalls)
+	}
+	if snap1.State.Content == nil || snap1.State.Content.Path != "content.md" || snap1.State.Content.Content == "" {
+		t.Fatalf("phase 1: missing content doc: %+v", snap1.State.Content)
+	}
+
+	// Shut down the first engine — keep workspace + config on disk.
+	engine1.Shutdown()
+
+	// ---- Phase 2: restart, verify restoration ----
+	c2 := &envelopeCollector{}
+	engine2, err := NewEngine(EngineConfig{ConfigDir: configDir, Emit: c2.emit})
+	if err != nil {
+		t.Fatalf("NewEngine (restart): %v", err)
+	}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	defer engine2.Shutdown()
+	go engine2.Run(ctx2)
+
+	resp = sendCommand(t, engine2, protocol.CmdSessionRestore, map[string]any{})
+	if !resp.OK {
+		t.Fatalf("session.restore: %+v", resp.Error)
+	}
+	if _, ok := c2.waitFor(t, 10*time.Second, "session.restored", isEvent(protocol.EvSessionRestored)); !ok {
+		t.Fatal("session.restored never emitted (phase 2)")
+	}
+
+	var snap2 protocol.Snapshot
+	if err := json.Unmarshal(engine2.RequestSnapshot(), &snap2); err != nil {
+		t.Fatalf("snapshot (restart): %v", err)
+	}
+	if snap2.State.Workspace.Path != workspace {
+		t.Fatalf("workspace = %q, want %q", snap2.State.Workspace.Path, workspace)
+	}
+	if !waitToolCalls(snap2) {
+		t.Fatalf("phase 2: tool calls not restored: %+v", snap2.State.Agent.ToolCalls)
+	}
+	if snap2.State.Content == nil || snap2.State.Content.Path != "content.md" || snap2.State.Content.Content == "" {
+		t.Fatalf("phase 2: content not restored: %+v", snap2.State.Content)
+	}
+}

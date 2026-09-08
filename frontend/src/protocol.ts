@@ -130,6 +130,7 @@ export interface ToolCall {
   why?: string
   status: ToolCallStatus
   approvalId?: string
+  groupLabel?: string // agent-assigned label for tool call grouping
 }
 
 export interface ApprovalRequest {
@@ -146,6 +147,7 @@ export interface ApprovalRequest {
 export interface ContentDoc {
   path: string
   content: string
+  format?: 'markdown' | 'html'
   updatedAt: number
 }
 

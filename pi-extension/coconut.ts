@@ -35,10 +35,18 @@
  *      project-local pi settings/extensions.
  */
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { type ExtensionAPI, withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import {
+	type ExtensionAPI,
+	withFileMutationQueue,
+	createReadTool,
+	createGrepTool,
+	createFindTool,
+	createLsTool,
+} from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
@@ -53,6 +61,9 @@ const ProposeEditParamsSchema = Type.Object({
 	}),
 	what: Type.String({ description: "Short summary of what the change does (shown to the user)." }),
 	why: Type.String({ description: "Rationale for the change (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
 	edits: Type.Array(
 		Type.Object({
 			oldText: Type.String({
@@ -69,6 +80,16 @@ export type ProposeEditParams = Static<typeof ProposeEditParamsSchema>;
 const ShowContentParamsSchema = Type.Object({
 	path: Type.String({ description: 'Document file name, e.g. "report.md" (staged outside the project tree).' }),
 	content: Type.String({ description: "Full document content (usually Markdown)." }),
+	what: Type.String({ description: "Short summary of what this document conveys (shown to the user)." }),
+	why: Type.String({ description: "Rationale for why this document is being shown (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
+	format: Type.Optional(
+		Type.String({
+			description: "Display format: 'markdown' (default) or 'html'. HTML is rendered in a sandboxed iframe without scripts.",
+		}),
+	),
 });
 export type ShowContentParams = Static<typeof ShowContentParamsSchema>;
 
@@ -80,8 +101,63 @@ const RunParamsSchema = Type.Object({
 	why: Type.String({
 		description: "Rationale for why this command is needed (shown to the user for approval).",
 	}),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
 });
 export type RunParams = Static<typeof RunParamsSchema>;
+
+// ---------------------------------------------------------------------------
+// Built-in tool override schemas (read, grep, find, ls)
+// Each extends the built-in tool's schema with required `what`/`why` fields.
+// ---------------------------------------------------------------------------
+
+const ReadSchemaWithWhatWhy = Type.Object({
+	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
+	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+	what: Type.String({ description: "Short summary of what this tool call does (shown to the user)." }),
+	why: Type.String({ description: "Rationale for why this tool call is needed (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
+});
+
+const GrepSchemaWithWhatWhy = Type.Object({
+	pattern: Type.String({ description: "The regex pattern to search for" }),
+	path: Type.Optional(Type.String({ description: "Directory or file to search in (defaults to cwd)" })),
+	glob: Type.Optional(Type.String({ description: "Glob pattern to filter files (e.g. '*.ts')" })),
+	ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search" })),
+	literal: Type.Optional(Type.Boolean({ description: "Treat pattern as a literal string" })),
+	context: Type.Optional(Type.Number({ description: "Number of context lines to show" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of results" })),
+	what: Type.String({ description: "Short summary of what this tool call does (shown to the user)." }),
+	why: Type.String({ description: "Rationale for why this tool call is needed (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
+});
+
+const FindSchemaWithWhatWhy = Type.Object({
+	pattern: Type.String({ description: "Glob pattern to find files (e.g. '**/*.ts')" }),
+	path: Type.Optional(Type.String({ description: "Directory to search in (defaults to cwd)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of results" })),
+	what: Type.String({ description: "Short summary of what this tool call does (shown to the user)." }),
+	why: Type.String({ description: "Rationale for why this tool call is needed (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
+});
+
+const LsSchemaWithWhatWhy = Type.Object({
+	path: Type.Optional(Type.String({ description: "Directory to list (defaults to cwd)" })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of entries" })),
+	what: Type.String({ description: "Short summary of what this tool call does (shown to the user)." }),
+	why: Type.String({ description: "Rationale for why this tool call is needed (shown to the user)." }),
+	groupLabel: Type.String({
+		description: "Short label to group this call with related calls; defaults to _default if omitted.",
+	}),
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -234,6 +310,8 @@ You are running inside the Coconut desktop app. Its environment differs from a s
 - Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
 - When the user asks to be SHOWN something ("show me…", "let me see…", "display…") — or your reply would be a long document, table, list, or code block — render it with \`show_content\` instead of stating it inline. To show an existing file, pass \`file\` (you do not need to reproduce its contents); to render a document you compose, pass \`path\` + \`content\`. Keep the chat reply itself short (a sentence pointing at the panel); the panel is the reading surface, chat is the conversation.
 - \`run\` is the shell-command tool (replacing \`bash\`). It requires \`what\` and \`why\` arguments so the user can approve commands with context. Whitelisted commands (ls, grep, cat, git status, etc.) run without approval; anything else opens an approval dialog.
+- Every tool call requires three fields: \`what\`, \`why\`, and \`groupLabel\`. \`what\` is a concise summary of the action and \`why\` is the rationale — the user reads both in the tool log. \`groupLabel\` is a **human-readable** label (e.g. "Search for todo auto-completion logic", "Implement changes to auto-completion logic") that groups independent tool calls that belong together — reading 3 files before editing them, or a read/edit/verify cycle. All calls with the same \`groupLabel\` string collapse into one expandable group in the tool log, making it easier for the user to review. It should concisely communicate the underlying intended outcome of the grouped tool calls.
+- Each agent has a per-agent env file at \`$COCONUT_AGENT_ENV\` (discover the path with \`echo $COCONUT_AGENT_ENV\`). It is sourced before every \`run\` command, so you can persist PATH additions and other environment setup (e.g. \`export PATH="/usr/local/go/bin:$PATH"\`) without hardcoding absolute paths in every command.
 `;
 
 // ---------------------------------------------------------------------------
@@ -263,6 +341,12 @@ export default function (pi: ExtensionAPI) {
 			"Use propose_edit only after reading the target file, with oldText matching its current content exactly.",
 		],
 		parameters: ProposeEditParamsSchema,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
 		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			const path = cleanPath(params.path);
 			const absPath = toAbsolute(ctx.cwd, path);
@@ -374,13 +458,22 @@ export default function (pi: ExtensionAPI) {
 		name: "show_content",
 		label: "Show Content",
 		description:
-			"Display a document (usually Markdown) to the user in the app's content panel. This is NOT a file-writing tool: it creates no project files and modifies nothing the user works on — it only displays the document. If the user asked you to create, write, or save a file, use propose_edit instead.",
-		promptSnippet: "Display a markdown document in the user's content panel",
+			"Display a document (Markdown or HTML) to the user in the app's content panel. This is NOT a file-writing tool: it creates no project files and modifies nothing the user works on — it only displays the document. HTML is rendered in a sandboxed iframe without scripts. If the user asked you to create, write, or save a file, use propose_edit instead.",
+		promptSnippet: "Display a markdown or HTML document in the user's content panel",
 		promptGuidelines: [
 			"Use show_content to display documents for the user to read (reports, plans, notes, summaries); it never creates project files — use propose_edit for anything that belongs in the project.",
 			"When the user asks to be shown something, or your answer is a long document/list/table, render it with show_content and keep the chat reply to a one-line pointer.",
 		],
 		parameters: ShowContentParamsSchema,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.what) input.what = `Display document ${input.path ?? "content"}`;
+			if (!input.why) input.why = "Showing content to the user as requested";
+			if (!input.groupLabel) input.groupLabel = "_default";
+			if (!input.format) input.format = "markdown";
+			return input;
+		},
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const absPath = stagingPath(params.path);
 			await withFileMutationQueue(absPath, async () => {
@@ -412,6 +505,12 @@ export default function (pi: ExtensionAPI) {
 			"Always provide a clear `what` (what the command does) and `why` (why it's needed) so the user can approve with context.",
 		],
 		parameters: RunParamsSchema,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
 		async execute(toolCallId, params, _signal, _onUpdate, ctx) {
 			const { command, what, why } = params;
 
@@ -434,13 +533,24 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			// Source the agent's per-agent env file (if any) before running
+			// the command. This lets the agent persist PATH additions and
+			// other env setup via propose_edit across tool calls. Errors from
+			// sourcing are suppressed so a broken env file can't block all
+			// commands; the command always runs.
+			const envFile = process.env.COCONUT_AGENT_ENV ?? "";
+			let script = command;
+			if (envFile && existsSync(envFile)) {
+				script = `. "${envFile}" 2>/dev/null; ${command}`;
+			}
+
 			// Execute the command via Node's child_process. execAsync resolves
 			// with { stdout, stderr } on success or rejects on non-zero exit.
 			let stdout = "";
 			let stderr = "";
 			let exitCode = 0;
 			try {
-				const result = await execAsync(command, { cwd: ctx.cwd });
+				const result = await execAsync(script, { cwd: ctx.cwd });
 				stdout = result.stdout;
 				stderr = result.stderr;
 			} catch (err: any) {
@@ -458,6 +568,102 @@ export default function (pi: ExtensionAPI) {
 				],
 				details: { command, exitCode, approved: true },
 			};
+		},
+		});
+
+	// -----------------------------------------------------------------------
+	// 3. Built-in tool overrides — add `what`/`why` to read, grep, find, ls
+	// These register tools with the same name as pi's built-ins, replacing
+	// their schema and execution. The execute functions delegate to the
+	// built-in tool factories, preserving exact behavior (image detection,
+	// ripgrep/fd, truncation, rendering) while enforcing what/why.
+	// -----------------------------------------------------------------------
+
+	pi.registerTool({
+		name: "read",
+		label: "Read",
+		description: "Read the contents of a file with line offset and limit support.",
+		promptSnippet: "Read file contents",
+		promptGuidelines: ["Use read to examine files instead of cat or sed."],
+		parameters: ReadSchemaWithWhatWhy,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.what) input.what = `Read file contents for ${input.path ?? "file"}`;
+			if (!input.why) input.why = "Examining file contents as part of the requested task";
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			const tool = createReadTool(ctx.cwd);
+			const { what: _what, why: _why, groupLabel: _groupLabel, ...rest } = params;
+			return tool.execute(toolCallId, rest, signal, onUpdate);
+		},
+	});
+
+	pi.registerTool({
+		name: "grep",
+		label: "Grep",
+		description: "Search file contents for patterns (respects .gitignore).",
+		promptSnippet: "Search file contents for patterns",
+		promptGuidelines: ["Use grep to search file contents for patterns; it respects .gitignore."],
+		parameters: GrepSchemaWithWhatWhy,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.what) input.what = `Search for pattern in files`;
+			if (!input.why) input.why = "Searching file contents as part of the requested task";
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			const tool = createGrepTool(ctx.cwd);
+			const { what: _what, why: _why, groupLabel: _groupLabel, ...rest } = params;
+			return tool.execute(toolCallId, rest, signal, onUpdate);
+		},
+	});
+
+	pi.registerTool({
+		name: "find",
+		label: "Find",
+		description: "Find files by glob pattern (respects .gitignore).",
+		promptSnippet: "Find files by glob pattern",
+		promptGuidelines: ["Use find to locate files by name or glob pattern; it respects .gitignore."],
+		parameters: FindSchemaWithWhatWhy,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.what) input.what = `Search for files matching pattern`;
+			if (!input.why) input.why = "Locating files as part of the requested task";
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			const tool = createFindTool(ctx.cwd);
+			const { what: _what, why: _why, groupLabel: _groupLabel, ...rest } = params;
+			return tool.execute(toolCallId, rest, signal, onUpdate);
+		},
+	});
+
+	pi.registerTool({
+		name: "ls",
+		label: "List",
+		description: "List directory contents.",
+		promptSnippet: "List directory contents",
+		promptGuidelines: ["Use ls to list directory contents."],
+		parameters: LsSchemaWithWhatWhy,
+		prepareArguments(args) {
+			if (!args || typeof args !== "object") return args;
+			const input = args as Record<string, unknown>;
+			if (!input.what) input.what = "List directory contents";
+			if (!input.why) input.why = "Examining directory structure as part of the requested task";
+			if (!input.groupLabel) input.groupLabel = "_default";
+			return input;
+		},
+		async execute(toolCallId, params, signal, onUpdate, ctx) {
+			const tool = createLsTool(ctx.cwd);
+			const { what: _what, why: _why, groupLabel: _groupLabel, ...rest } = params;
+			return tool.execute(toolCallId, rest, signal, onUpdate);
 		},
 	});
 

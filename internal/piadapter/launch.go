@@ -22,6 +22,7 @@ type SidecarSettings struct {
 	APIKey        string   // provider key; injected via env
 	APIKeyEnv     []string // env var names for the key; empty = use convention
 	BashWhitelist []string // extra prefixes for COCONUT_BASH_WHITELIST
+	AgentEnvFile  string   // per-agent env file sourced by the run tool (COCONUT_AGENT_ENV)
 	SessionName   string
 }
 
@@ -56,7 +57,7 @@ func ResolveBinary(selfPath string) string {
 //	   [--provider P --model M] --session-dir <dir> [--name N]
 //
 // env: PI_CODING_AGENT_DIR (isolated config), provider API key,
-// COCONUT_BASH_WHITELIST, PI_SKIP_VERSION_CHECK=1.
+// COCONUT_BASH_WHITELIST, COCONUT_AGENT_ENV, PI_SKIP_VERSION_CHECK=1.
 func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensionPath, binary string) LaunchSpec {
 	args := []string{
 		"--mode", "rpc",
@@ -82,6 +83,9 @@ func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensi
 	}
 	if len(s.BashWhitelist) > 0 {
 		env = append(env, "COCONUT_BASH_WHITELIST="+strings.Join(s.BashWhitelist, ","))
+	}
+	if s.AgentEnvFile != "" {
+		env = append(env, "COCONUT_AGENT_ENV="+s.AgentEnvFile)
 	}
 	if s.APIKey != "" {
 		names := s.APIKeyEnv

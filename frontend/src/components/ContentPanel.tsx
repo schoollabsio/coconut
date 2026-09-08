@@ -47,11 +47,15 @@ export function ContentPanel({ client }: { client: BackendClient }) {
       {approval ? (
         <ApprovalView approval={approval} client={client} />
       ) : content ? (
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="max-w-3xl mx-auto">
-            <Markdown text={content.content} className="text-ink" />
+        content.format === 'html' ? (
+          <HtmlPreview html={content.content} path={content.path} />
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="max-w-3xl mx-auto">
+              <Markdown text={content.content} className="text-ink" />
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
           <div className="border border-dashed border-linestrong rounded-lg px-8 py-10 text-center">
@@ -61,6 +65,29 @@ export function ContentPanel({ client }: { client: BackendClient }) {
         </div>
       )}
     </div>
+  )
+}
+
+function HtmlPreview({ html, path }: { html: string; path: string }) {
+  // Inject a <style> that forces the iframe document to be scrollable even
+  // when the rendered HTML sets overflow:hidden on html/body (common in
+  // full-bleed layouts). We aim to place it as late as possible in <head>
+  // for cascade priority (so it can override !important rules too), falling
+  // back to before <body> or the start of the string. The HTML parser
+  // relocates a leading <style> into <head> automatically.
+  const scrollGuard = '<style>html,body{margin:0;height:100%;overflow:auto!important}</style>'
+  const srcDoc = /<\/head>/i.test(html)
+    ? html.replace(/<\/head>/i, `${scrollGuard}</head>`)
+    : /<body/i.test(html)
+      ? html.replace(/<body/i, `${scrollGuard}<body`)
+      : `${scrollGuard}${html}`
+  return (
+    <iframe
+      srcDoc={srcDoc}
+      sandbox=""
+      title={path}
+      className="flex-1 w-full h-full border-none bg-base"
+    />
   )
 }
 

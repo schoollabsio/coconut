@@ -43,14 +43,16 @@ type domainState struct {
 }
 
 type toolStartInfo struct {
-	ToolName string
-	Path     string
-	Command  string
-	What     string // tool call's action description, if provided
-	Why      string // tool call's rationale, if provided
-	Content  string // show_content composed-document payload
-	File     string // show_content render-an-existing-file payload
-	Args     map[string]any
+	ToolName   string
+	Path       string
+	Command    string
+	What       string // tool call's action description, if provided
+	Why        string // tool call's rationale, if provided
+	Content    string // show_content composed-document payload
+	File       string // show_content render-an-existing-file payload
+	Format     string // show_content display format: "markdown" (default) | "html"
+	GroupLabel string // agent-assigned label for tool call grouping
+	Args       map[string]any
 }
 
 // pendingApproval ties a frontend approval to the pi dialog request.

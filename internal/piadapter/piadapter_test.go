@@ -240,6 +240,7 @@ func TestLaunchSpecArgs(t *testing.T) {
 			Model:         "sonnet",
 			APIKey:        "sk-test",
 			BashWhitelist: []string{"make", "go build"},
+			AgentEnvFile:  "/cfg/agent/env",
 			SessionName:   "demo",
 		},
 		"/ws", "/cfg/agent", "/cfg/sessions", "/ext/coconut.ts", "/bin/coconut-pi",
@@ -260,6 +261,7 @@ func TestLaunchSpecArgs(t *testing.T) {
 		"PI_CODING_AGENT_DIR=/cfg/agent",
 		"ANTHROPIC_API_KEY=sk-test",
 		"COCONUT_BASH_WHITELIST=make,go build",
+		"COCONUT_AGENT_ENV=/cfg/agent/env",
 		"PI_SKIP_VERSION_CHECK=1",
 	} {
 		if !strings.Contains(envJoined, want) {

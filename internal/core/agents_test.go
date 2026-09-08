@@ -177,7 +177,7 @@ func TestAgentResetFlow(t *testing.T) {
 		t.Fatal("session.restored never emitted")
 	}
 	before := engine.state.app.ws(workspace).agent("primary").LastSessionFile
-	if before != "/fakepi/session-1.jsonl" {
+	if filepath.Base(before) != "session-1.jsonl" {
 		t.Fatalf("unexpected initial session file: %q", before)
 	}
 
@@ -189,7 +189,7 @@ func TestAgentResetFlow(t *testing.T) {
 		t.Fatal("agent.session.reset never emitted")
 	}
 	after := engine.state.app.ws(workspace).agent("primary").LastSessionFile
-	if after != "/fakepi/session-2.jsonl" {
+	if filepath.Base(after) != "session-2.jsonl" {
 		t.Fatalf("session file did not advance: %q", after)
 	}
 }

@@ -110,6 +110,48 @@ func TestShowContentPromotion(t *testing.T) {
 	}
 }
 
+// show_content format field: when the agent passes format:'html', the
+// content doc carries it through; without it, defaults to "markdown".
+func TestShowContentFormat(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// HTML format: the agent passes format:'html'.
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"h1","toolName":"show_content","args":{"path":"diagram.html","content":"<svg/>","format":"html"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"h1","toolName":"show_content","isError":false}`)
+
+	if engine.state.content == nil {
+		t.Fatal("expected content for html format")
+	}
+	if engine.state.content.Format != "html" {
+		t.Fatalf("expected format 'html', got %q", engine.state.content.Format)
+	}
+
+	// Verify the event payload carries the format.
+	_, payload, ok := collector.find(t, isEvent(protocol.EvContentUpdated))
+	if !ok {
+		t.Fatal("no content.updated event")
+	}
+	var doc protocol.ContentDoc
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("unmarshal content.updated payload: %v", err)
+	}
+	if doc.Format != "html" {
+		t.Fatalf("event payload format = %q, want 'html'", doc.Format)
+	}
+
+	// Default: no format field → "markdown".
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"m1","toolName":"show_content","args":{"path":"notes.md","content":"# Hi"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"m1","toolName":"show_content","isError":false}`)
+
+	if engine.state.content.Format != "markdown" {
+		t.Fatalf("expected default format 'markdown', got %q", engine.state.content.Format)
+	}
+}
+
 // show_content file mode renders an existing file from disk: the backend
 // reads it (contents never touch the model transcript) and promotes it.
 func TestShowContentFileMode(t *testing.T) {
@@ -280,5 +322,35 @@ func TestWhitelistedRunCapturesWhatWhy(t *testing.T) {
 		return envType == "event" && name == protocol.EvApprovalRequested
 	}); ok {
 		t.Fatal("approval.requested emitted for a whitelisted run command")
+	}
+}
+
+// groupLabel in tool args is captured at tool_execution_start and stored
+// on the ToolCall so the frontend grouper can collapse calls into groups.
+func TestNormalizeToolCallGroupLabel(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feedNorm(engine, "tool_execution_start", `{"toolCallId":"tc1","toolName":"read","args":{"path":"foo.txt","what":"Read foo.txt","why":"Need to check the content","groupLabel":"investigate"}}`)
+	feedNorm(engine, "tool_execution_end", `{"toolCallId":"tc1","toolName":"read","isError":false}`)
+
+	if len(engine.state.toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(engine.state.toolCalls))
+	}
+	call := engine.state.toolCalls[0]
+	if call.GroupLabel != "investigate" {
+		t.Errorf("GroupLabel = %q, want %q", call.GroupLabel, "investigate")
+	}
+	if call.What != "Read foo.txt" {
+		t.Errorf("What = %q, want %q", call.What, "Read foo.txt")
+	}
+	if call.Why != "Need to check the content" {
+		t.Errorf("Why = %q, want %q", call.Why, "Need to check the content")
+	}
+	if call.Status != protocol.ToolDone {
+		t.Errorf("Status = %q, want %s", call.Status, protocol.ToolDone)
 	}
 }

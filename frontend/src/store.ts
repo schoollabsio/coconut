@@ -58,6 +58,8 @@ export interface UIState {
   agentPickerOpen: boolean
   agentList: AgentSummary[]
   notifications: Notification[]
+  /** Expanded group keys for the tool call log (UI-only, not synced to backend). Groups default to collapsed. */
+  expandedGroups: Set<string>
 }
 
 const initialState: UIState = {
@@ -77,6 +79,7 @@ const initialState: UIState = {
   agentPickerOpen: false,
   agentList: [],
   notifications: [],
+  expandedGroups: new Set<string>(),
 }
 
 type Listener = () => void
@@ -135,6 +138,29 @@ export class UIStore {
   }
   dismissNotification(id: number) {
     this.set({ notifications: this.state.notifications.filter((n) => n.id !== id) })
+  }
+
+  // ------------------------------------------------------------------
+  // tool call group expansion state (local UI state)
+  // ------------------------------------------------------------------
+
+  toggleGroup(key: string) {
+    const next = new Set(this.state.expandedGroups)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    this.set({ expandedGroups: next })
+  }
+  collapseGroup(key: string) {
+    if (!this.state.expandedGroups.has(key)) return
+    const next = new Set(this.state.expandedGroups)
+    next.delete(key)
+    this.set({ expandedGroups: next })
+  }
+  expandGroup(key: string) {
+    if (this.state.expandedGroups.has(key)) return
+    const next = new Set(this.state.expandedGroups)
+    next.add(key)
+    this.set({ expandedGroups: next })
   }
 
   // ------------------------------------------------------------------
@@ -313,6 +339,7 @@ export class UIStore {
           pendingApprovals: [],
           focusedApprovalId: null,
           content: null,
+          expandedGroups: new Set<string>(),
         })
         break
       case Ev.WindowStateChanged:

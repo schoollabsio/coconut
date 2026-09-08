@@ -149,7 +149,8 @@
         "toolCallId": "call_1",
         "toolName": "read",
         "args": {
-          "path": "App.tsx"
+          "path": "App.tsx",
+          "groupLabel": "Investigate delete button bug"
         }
       },
       "delayMs": 80
@@ -178,7 +179,8 @@
         "toolCallId": "call_2",
         "toolName": "read",
         "args": {
-          "path": "TodoList.tsx"
+          "path": "TodoList.tsx",
+          "groupLabel": "Investigate delete button bug"
         }
       },
       "delayMs": 60
@@ -210,6 +212,7 @@
           "path": "TodoList.tsx",
           "what": "Use todo.id in the delete handler instead of the array index",
           "why": "The list is filtered, so indexes shift and the wrong item is deleted",
+          "groupLabel": "Fix delete handler",
           "edits": [
             {
               "oldText": "onClick={() => onDelete(index)}",
@@ -480,7 +483,8 @@
         "toolName": "show_content",
         "args": {
           "path": "content.md",
-          "content": "# Todo App\n\n- [x] Fix delete handler\n- [ ] Mark todos complete\n"
+          "content": "# Todo App\n\n- [x] Fix delete handler\n- [ ] Mark todos complete\n",
+          "groupLabel": "Update project notes"
         }
       },
       "delayMs": 80
@@ -512,6 +516,7 @@
           "path": "TodoItem.tsx",
           "what": "Add a checkbox that toggles todo completion",
           "why": "Users need to mark todos complete; completed items show a line-through",
+          "groupLabel": "Add checkbox toggle",
           "edits": [
             {
               "oldText": "<span>{todo.text}</span>",

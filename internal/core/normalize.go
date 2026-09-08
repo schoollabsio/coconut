@@ -129,22 +129,30 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		if f, ok := m.Args["file"].(string); ok {
 			info.File = f
 		}
+		if f, ok := m.Args["format"].(string); ok {
+			info.Format = f
+		}
 		if w, ok := m.Args["what"].(string); ok {
 			info.What = w
 		}
 		if w, ok := m.Args["why"].(string); ok {
 			info.Why = w
 		}
+		groupLabel := ""
+		if gl, ok := m.Args["groupLabel"].(string); ok {
+			groupLabel = gl
+		}
 		e.state.toolArgs[m.ToolCallID] = info
 
 		call := protocol.ToolCall{
-			ID:     m.ToolCallID,
-			Tool:   m.ToolName,
-			Label:  toolLabel(m.ToolName, info),
-			Path:   info.Path,
-			What:   info.What,
-			Why:    info.Why,
-			Status: protocol.ToolRunning,
+			ID:         m.ToolCallID,
+			Tool:       m.ToolName,
+			Label:      toolLabel(m.ToolName, info),
+			Path:       info.Path,
+			What:       info.What,
+			Why:        info.Why,
+			Status:     protocol.ToolRunning,
+			GroupLabel: groupLabel,
 		}
 		e.state.toolCalls = append(e.state.toolCalls, call)
 		e.emitEvent(protocol.EvAgentToolStarted, call, "")
@@ -499,14 +507,23 @@ func (e *Engine) promoteShowContent(info toolStartInfo) {
 			e.notify("error", "show_content: "+info.File+" is too large to display")
 			return
 		}
-		e.state.content = &protocol.ContentDoc{Path: info.File, Content: string(data), UpdatedAt: nowMs()}
+		e.state.content = &protocol.ContentDoc{Path: info.File, Content: string(data), Format: contentFormat(info.Format), UpdatedAt: nowMs()}
 		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
 		return
 	}
 	if info.Path != "" {
-		e.state.content = &protocol.ContentDoc{Path: info.Path, Content: info.Content, UpdatedAt: nowMs()}
+		e.state.content = &protocol.ContentDoc{Path: info.Path, Content: info.Content, Format: contentFormat(info.Format), UpdatedAt: nowMs()}
 		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
 	}
+}
+
+// contentFormat returns the display format, defaulting to "markdown"
+// when the agent didn't specify one.
+func contentFormat(f string) string {
+	if f == "html" {
+		return "html"
+	}
+	return "markdown"
 }
 
 // dismissApprovalForToolCallLocked removes a pending approval bound to a

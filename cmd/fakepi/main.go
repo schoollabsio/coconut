@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -81,6 +82,13 @@ type server struct {
 	// new_session, replaced by switch_session.
 	sessionFile atomic.Value // string
 
+	// transcriptFile is the real on-disk mirror of the event stream,
+	// for transcript-based session restoration (rebuildToolCallsLocked).
+	// May be nil if no COCONUT_FAKEPI_TRANSCRIPT_DIR was provided.
+	transcriptDir  string
+	transcriptFile *os.File
+	transcriptMu   sync.Mutex // guards transcriptFile
+
 	// Waiters registered by the scenario engine. At most one of each is
 	// active at a time (the engine is sequential).
 	mu         sync.Mutex
@@ -102,7 +110,11 @@ func newServer() *server {
 		cmdCh: make(chan Command),
 		done:  make(chan struct{}),
 	}
-	s.sessionFile.Store("/fakepi/session-1.jsonl")
+	s.transcriptDir = os.Getenv("COCONUT_FAKEPI_TRANSCRIPT_DIR")
+	if s.transcriptDir != "" {
+		os.MkdirAll(s.transcriptDir, 0o755)
+	}
+	s.initSessionFile()
 	return s
 }
 
@@ -183,6 +195,7 @@ func (s *server) dispatch(c Command) {
 	case "switch_session":
 		if p, _ := c.Msg["sessionPath"].(string); p != "" {
 			s.sessionFile.Store(p)
+			s.openTranscriptFile(p)
 		}
 		s.respondOK(c, nil)
 	case "get_state":
@@ -356,15 +369,117 @@ func fakeModel() map[string]any {
 	}
 }
 
+// initSessionFile is called once at process startup. It reuses the
+// latest existing transcript file (so an on-disk session persists across
+// fakepi restarts, mirroring how the real pi persists to its config dir),
+// or creates a new one if none exists.
+func (s *server) initSessionFile() {
+	s.transcriptMu.Lock()
+	defer s.transcriptMu.Unlock()
+
+	if s.transcriptFile != nil {
+		s.transcriptFile.Close()
+	}
+	s.transcriptFile = nil
+
+	if s.transcriptDir == "" {
+		s.sessionFile.Store("/fakepi/session-1.jsonl")
+		return
+	}
+
+	// Find the latest existing transcript file by number.
+	var latestNum int
+	if entries, err := os.ReadDir(s.transcriptDir); err == nil {
+		for _, e := range entries {
+			var n int
+			if _, err := fmt.Sscanf(e.Name(), "session-%d.jsonl", &n); err == nil &&
+				n > latestNum {
+				latestNum = n
+			}
+		}
+	}
+
+	if latestNum > 0 {
+		path := filepath.Join(s.transcriptDir, fmt.Sprintf("session-%d.jsonl", latestNum))
+		s.sessionFile.Store(path)
+		if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			s.transcriptFile = f
+		}
+		return
+	}
+
+	// No previous transcript — create a fresh one.
+	path := filepath.Join(s.transcriptDir, "session-1.jsonl")
+	s.sessionFile.Store(path)
+	if f, err := os.Create(path); err == nil {
+		s.transcriptFile = f
+	}
+}
+
 // newSessionFile simulates pi creating a fresh transcript per session.
 func (s *server) newSessionFile() {
-	cur, _ := s.sessionFile.Load().(string)
+	s.transcriptMu.Lock()
+	defer s.transcriptMu.Unlock()
+
+	if s.transcriptFile != nil {
+		s.transcriptFile.Close()
+	}
+	s.transcriptFile = nil
+
 	n := 1
+	if s.transcriptDir != "" {
+		if entries, err := os.ReadDir(s.transcriptDir); err == nil {
+			for _, e := range entries {
+				var parsed int
+				if _, err := fmt.Sscanf(e.Name(), "session-%d.jsonl", &parsed); err == nil {
+					n = parsed + 1
+				}
+			}
+		}
+		path := filepath.Join(s.transcriptDir, fmt.Sprintf("session-%d.jsonl", n))
+		s.sessionFile.Store(path)
+		if f, err := os.Create(path); err == nil {
+			s.transcriptFile = f
+		}
+		return
+	}
+
+	// Fallback: dummy path, no real file (backward compat).
+	cur, _ := s.sessionFile.Load().(string)
 	var parsed int
 	if _, err := fmt.Sscanf(cur, "/fakepi/session-%d.jsonl", &parsed); err == nil {
 		n = parsed + 1
 	}
 	s.sessionFile.Store(fmt.Sprintf("/fakepi/session-%d.jsonl", n))
+}
+
+// writeToTranscript writes the event as a JSONL line to the on-disk
+// transcript file, mirroring what the real pi writes to its transcript.
+func (s *server) writeToTranscript(ev map[string]any) {
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	s.transcriptMu.Lock()
+	defer s.transcriptMu.Unlock()
+	if s.transcriptFile == nil {
+		return
+	}
+	_, _ = s.transcriptFile.Write(append(data, '\n'))
+}
+
+// openTranscriptFile closes the current transcript file and opens the
+// specified path for appending.
+func (s *server) openTranscriptFile(path string) {
+	s.transcriptMu.Lock()
+	defer s.transcriptMu.Unlock()
+	if s.transcriptFile != nil {
+		s.transcriptFile.Close()
+	}
+	s.transcriptFile = nil
+	if f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		s.transcriptFile = f
+	}
 }
 
 func (s *server) stateData() map[string]any {
@@ -406,9 +521,16 @@ func (s *server) statsData() map[string]any {
 // Emission helpers shared by engine and canned flow
 // ---------------------------------------------------------------------------
 
-// emitEvent updates session state derived from the event, then writes it.
+// emitEvent updates session state derived from the event, then writes it
+// to both stdout (live stream) and the on-disk transcript file.
 func (s *server) emitEvent(ev map[string]any) {
 	s.observeEvent(ev)
+	// Write to the transcript file BEFORE stdout so that when the
+	// backend reads an event, it has already been persisted. This
+	// eliminates a race where the backend could process agent_settled
+	// (emitting agent.completed) and trigger a shutdown before the
+	// event lands in the transcript file.
+	s.writeToTranscript(ev)
 	s.w.writeJSON(ev)
 }
 

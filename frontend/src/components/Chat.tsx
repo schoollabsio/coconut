@@ -16,14 +16,26 @@ function formatThinkingDuration(ms: number): string {
 
 function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
   const [expanded, setExpanded] = useState(false)
+  const [showTopShadow, setShowTopShadow] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom as new thinking tokens arrive.
   useEffect(() => {
-    if (!thinkingDone && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
+    const el = scrollRef.current
+    if (!el || thinkingDone) return
+    el.scrollTop = el.scrollHeight
+    setShowTopShadow(el.scrollTop > 0)
   }, [thinking, thinkingDone])
+
+  // Track scroll position for the top overflow shadow.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => setShowTopShadow(el.scrollTop > 0)
+    el.addEventListener('scroll', onScroll)
+    onScroll()
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [thinkingDone])
 
   if (thinkingDone) {
     return (
@@ -44,10 +56,31 @@ function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: strin
     )
   }
 
-  // Still streaming — show full, scrollable content with per-token fade-in.
+  // Still streaming — "Thinking…" label above, block quote style with a
+  // vertical line, and a top fade shadow when content overflows.
   return (
-    <div ref={scrollRef} className="mb-2 text-xs italic text-dim max-h-[10lh] overflow-y-auto whitespace-pre-wrap">
-      <FadingTail text={thinking} className="text-dim" />
+    <div className="mb-2">
+      <div className="text-xs italic text-dim mb-1 flex items-center gap-1">
+        <svg className="w-3 h-3 animate-spin text-dim" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.3" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        Thinking…
+      </div>
+      <div className="relative">
+        {showTopShadow && (
+          <div
+            className="absolute top-0 left-0 right-0 h-6 pointer-events-none"
+            style={{ background: 'linear-gradient(to bottom, var(--surface), transparent)' }}
+          />
+        )}
+        <div
+          ref={scrollRef}
+          className="text-xs italic text-dim border-l-2 border-line pl-3 max-h-[10lh] overflow-y-auto whitespace-pre-wrap"
+        >
+          <FadingTail text={thinking} className="text-dim" />
+        </div>
+      </div>
     </div>
   )
 }
@@ -56,6 +89,9 @@ export function Chat({ client }: { client: BackendClient }) {
   const messages = useUIState((s) => s.agent.messages)
   const status = useUIState((s) => s.agent.status)
   const busy = status !== 'idle' && status !== 'error'
+  const lastMsg = messages[messages.length - 1]
+  const thinkingActive = !!lastMsg && lastMsg.role === 'assistant' &&
+    !!lastMsg.thinking && !lastMsg.thinkingDone
 
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -115,7 +151,7 @@ export function Chat({ client }: { client: BackendClient }) {
             </div>
           ),
         )}
-        {busy && !messages[messages.length - 1]?.streaming &&
+        {busy && !lastMsg?.streaming && !thinkingActive &&
           (status === 'awaiting_approval' ? (
             <span className="text-dim text-sm italic subtle-pulse">
               waiting for your approval…
@@ -126,7 +162,7 @@ export function Chat({ client }: { client: BackendClient }) {
                 <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.3" />
                 <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
-              Thinking…
+              Generating…
             </span>
           ))}
       </div>
