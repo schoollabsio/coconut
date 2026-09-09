@@ -118,7 +118,7 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
           {approval.what && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">What</div>
-              <p className="text-base text-ink leading-relaxed">{approval.what}</p>
+              <p className="text-lg text-ink leading-relaxed">{approval.what}</p>
             </div>
           )}
           {approval.why && (
@@ -139,7 +139,7 @@ function ApprovalView({ approval, client }: { approval: ApprovalRequest; client:
           {approval.what && (
             <div>
               <div className="text-[10px] uppercase tracking-wider text-warn/80 mb-1">What</div>
-              <p className="text-base text-ink leading-relaxed">{approval.what}</p>
+              <p className="text-lg text-ink leading-relaxed">{approval.what}</p>
             </div>
           )}
           {approval.why && (

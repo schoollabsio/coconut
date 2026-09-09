@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { store, useUIState } from '../store'
-import { groupToolCalls } from '../toolGrouping'
+import { groupToolCalls, isLastGroup } from '../toolGrouping'
 import type { ToolCall } from '../protocol'
 
 /**
@@ -21,6 +21,36 @@ export function ToolLog() {
   const [hoveredToolCallId, setHoveredToolCallId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupToolCalls(toolCalls), [toolCalls])
+
+  // --- sticky autoscroll ---------------------------------------------------
+  // Follow new tool calls by scrolling to the bottom, but only when the
+  // user is already at (or near) the bottom. If they've scrolled up to
+  // read earlier entries, leave the viewport where they put it.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const isAtBottomRef = useRef(true) // start at bottom
+
+  // Track scroll position → update the "at bottom" flag.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      isAtBottomRef.current =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 20
+    }
+    el.addEventListener('scroll', onScroll)
+    onScroll() // set initial value
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Scroll to bottom when new tool calls arrive (if still at bottom).
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (isAtBottomRef.current) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [toolCalls])
+  // --------------------------------------------------------------------------
 
   if (toolCalls.length === 0) {
     return (
@@ -114,10 +144,14 @@ export function ToolLog() {
   }
 
   return (
-    <div className="flex flex-col gap-1.5 overflow-y-auto max-h-96 md:max-h-none md:flex-1 pr-1 text-xs">
-      {groups.map((group) => {
+    <div ref={scrollRef} className="flex flex-col gap-1.5 overflow-y-auto max-h-96 md:max-h-none md:flex-1 pr-1 text-xs">
+      {groups.map((group, groupIndex) => {
         const hasGrouper = group.grouper !== null
-        const collapsed = hasGrouper && !expandedGroups.has(group.key)
+        // Auto-expand the last group (if it has a grouper) unless the user explicitly collapsed it.
+        // This keeps tool calls visible while they're being generated, then auto-collapses when complete.
+        const isLast = isLastGroup(groups, groupIndex)
+        const userExpanded = expandedGroups.has(group.key)
+        const collapsed = hasGrouper && !userExpanded && !isLast
         // Pseudo-expand: when a collapsed group contains pending-approval calls,
         // render only those so the user can still click to focus them.
         const visibleCalls = collapsed

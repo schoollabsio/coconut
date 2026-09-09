@@ -213,13 +213,26 @@ type SettingsValidateResult struct {
 // Domain view models (event payloads + snapshot state)
 // ---------------------------------------------------------------------------
 
-// AgentStatus values.
+// AgentStatus values - full granularity for all agent phases (Option E).
+// The 'thinking' and 'streaming' statuses are kept for backward compatibility
+// but internally we use 'reasoning' and 'generating' for clarity.
 const (
-	StatusIdle             = "idle"
-	StatusThinking         = "thinking"
-	StatusStreaming        = "streaming"
-	StatusAwaitingApproval = "awaiting_approval"
-	StatusError            = "error"
+	StatusIdle                   = "idle"
+	StatusReasoning              = "reasoning"     // was 'thinking'
+	StatusGenerating             = "generating"    // was 'streaming'
+	StatusRunningTool            = "running_tool"  // NEW: tool executing without approval
+	StatusAwaitingToolApproval   = "awaiting_tool_approval" // NEW: tool needs approval
+	StatusAwaitingApprovalLegacy = "awaiting_approval"      // deprecated, for backward compat
+	StatusError                  = "error"
+)
+
+// Status aliases for backward compatibility with existing code.
+// These map the old names to the new semantic names.
+const (
+	StatusThinking               = StatusReasoning  // alias
+	StatusStreaming              = StatusGenerating // alias
+	StatusAwaitingApprovalCompat = StatusAwaitingToolApproval // for approval workflows
+	StatusAwaitingApproval       = StatusAwaitingApprovalLegacy // backward compat
 )
 
 type ChatMessage struct {
@@ -234,11 +247,29 @@ type ChatMessage struct {
 
 // Tool call statuses.
 const (
-	ToolRunning         = "running"
-	ToolDone            = "done"
-	ToolError           = "error"
-	ToolPendingApproval = "pending_approval"
+	ToolRunning           = "running"
+	ToolDone              = "done"
+	ToolError             = "error"
+	ToolPendingApproval   = "pending_approval"
 )
+
+// Tool phases for status emission during tool execution.
+const (
+	ToolApprovalReasonEdit  = "propose_edit"
+	ToolApprovalReasonBash  = "bash"
+	ToolReasonRun           = "run"
+	ToolReasonTool          = "tool"
+)
+
+// Helper function to determine if a tool call needs approval.
+func NeedApproval(tool string) bool {
+	switch tool {
+	case "bash", "run", "propose_edit":
+		return true
+	default:
+		return false
+	}
+}
 
 type ToolCall struct {
 	ID         string `json:"id"`

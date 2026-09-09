@@ -46,8 +46,8 @@ describe('UIStore', () => {
   it('applies sequenced events in order', () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(1))
-    s.applyBackendMessage(ev(2, Ev.AgentStatusChanged, { status: 'thinking' }))
-    expect(s.state.agent.status).toBe('thinking')
+    s.applyBackendMessage(ev(2, Ev.AgentStatusChanged, { status: 'reasoning' }))
+    expect(s.state.agent.status).toBe('reasoning')
     expect(s.state.lastBackendSeq).toBe(2)
   })
 
@@ -72,7 +72,7 @@ describe('UIStore', () => {
   it('replaces the streaming message when its final version arrives', async () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(1))
-    // In the real flow, agent.started sets status to 'thinking' before
+    // In the real flow, agent.started sets status to 'reasoning' before
     // any token streams are emitted.
     s.applyBackendMessage(ev(2, Ev.AgentStarted))
     s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hel' } })
@@ -106,7 +106,7 @@ describe('UIStore', () => {
 
     // Now let the buffered stream flush.
     await new Promise((r) => setTimeout(r, 5))
-    expect(s.state.agent.status).toBe('idle') // not reset to 'streaming'
+    expect(s.state.agent.status).toBe('idle') // not reset to 'generating'
     const after = s.state.agent.messages.find((m) => m.id === 'm9')
     expect(after?.streaming).toBe(false) // still finalized, not re-marked
   })
@@ -119,7 +119,7 @@ describe('UIStore', () => {
     s.applyBackendMessage(ev(3, Ev.ApprovalRequested, approval))
     expect(s.state.pendingApprovals).toHaveLength(1)
     expect(s.state.focusedApprovalId).toBe('ap-1')
-    expect(s.state.agent.status).toBe('awaiting_approval')
+    expect(s.state.agent.status).toBe('awaiting_tool_approval')
     expect(s.state.agent.toolCalls[0].status).toBe('pending_approval')
     // what should be persisted on the tool call from the approval
     expect(s.state.agent.toolCalls[0].what).toBe('w')
@@ -131,7 +131,7 @@ describe('UIStore', () => {
     s.applyBackendMessage(ev(5, Ev.ApprovalResolved, { approvalId: 'ap-1', decision: 'allow' }))
     expect(s.state.pendingApprovals).toHaveLength(0)
     expect(s.state.focusedApprovalId).toBeNull()
-    expect(s.state.agent.status).toBe('thinking')
+    expect(s.state.agent.status).toBe('reasoning')
   })
 
   it('updates content on content.updated', () => {

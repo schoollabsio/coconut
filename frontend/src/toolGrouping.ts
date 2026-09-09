@@ -147,6 +147,18 @@ export const agentGrouper: ToolCallGrouper = {
  */
 export const defaultGroupers: ToolCallGrouper[] = [agentGrouper, readGrouper]
 
+// Helper functions for tool grouping
+
+/**
+ * Returns true if the group at the given index contains the last tool call.
+ * Used to determine if a group should be auto-expanded (when it's the bottom group).
+ */
+export function isLastGroup(groups: ToolCallGroup[], groupIndex: number): boolean {
+  if (groupIndex < 0 || groupIndex >= groups.length) return false
+  const lastGroup = groups[groups.length - 1]
+  return lastGroup.key === groups[groupIndex].key
+}
+
 // ---------------------------------------------------------------------------
 // Orchestrator
 // ---------------------------------------------------------------------------

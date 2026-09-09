@@ -107,7 +107,28 @@ export const Stream = {
 // Domain view models
 // ---------------------------------------------------------------------------
 
-export type AgentStatus = 'idle' | 'thinking' | 'streaming' | 'awaiting_approval' | 'error'
+// AgentStatus values - full granularity for all agent phases (Option E).
+// Kept for backward compatibility but extended for tool execution phases.
+export type AgentStatus = 'idle' | 'reasoning' | 'generating' | 'running_tool' | 'awaiting_tool_approval' | 'error'
+
+// Status constants for easier comparison.
+export const Status = {
+  Idle: 'idle',
+  Reasoning: 'reasoning',
+  Generating: 'generating',
+  RunningTool: 'running_tool',
+  AwaitingToolApproval: 'awaiting_tool_approval',
+  Error: 'error',
+} as const
+
+/** @deprecated Use Status.Reasoning or status === 'reasoning' */
+export const StatusThinking = 'reasoning'
+
+/** @deprecated Use Status.Generating or status === 'generating' */
+export const StatusStreaming = 'generating'
+
+// AgentStatus type already exported above
+// Re-export helper functions: isBusy, isToolStatus, getStatusLabel
 
 export interface ChatMessage {
   id: string
@@ -176,6 +197,32 @@ export interface AgentState {
   status: AgentStatus
   messages: ChatMessage[]
   toolCalls: ToolCall[]
+}
+
+// Helper to check if status indicates the agent is busy.
+export function isBusy(status: AgentStatus): boolean {
+  return status !== 'idle' && status !== 'error'
+}
+
+// Helper to check if status indicates tool execution.
+export function isToolStatus(status: AgentStatus): boolean {
+  return status === 'running_tool' || status === 'awaiting_tool_approval'
+}
+
+// Helper to get the loading label for a status.
+export function getStatusLabel(status: AgentStatus): string {
+  switch (status) {
+    case 'reasoning':
+      return 'Thinking...'
+    case 'generating':
+      return 'Generating...'
+    case 'running_tool':
+      return 'Tool running...'
+    case 'awaiting_tool_approval':
+      return 'waiting for your approval...'
+    default:
+      return ''
+  }
 }
 
 export interface SnapshotState {

@@ -223,8 +223,8 @@ export class UIStore {
 
     const p = ev.payload as Record<string, any> | undefined
     switch (ev.name) {
+      // AgentStarted handler - status is handled by EvAgentStatusChanged
       case Ev.AgentStarted:
-        this.setAgent({ status: 'thinking' })
         break
       case Ev.AgentStatusChanged:
         this.setAgent({ status: (p?.status ?? 'idle') as AgentStatus })
@@ -263,7 +263,7 @@ export class UIStore {
         this.set({
           pendingApprovals,
           focusedApprovalId: keepFocus ? cur : req.id,
-          agent: { ...this.state.agent, status: 'awaiting_approval', toolCalls },
+          agent: { ...this.state.agent, status: 'awaiting_tool_approval', toolCalls },
         })
         break
       }
@@ -275,7 +275,7 @@ export class UIStore {
             this.state.focusedApprovalId === p?.approvalId
               ? (pendingApprovals[0]?.id ?? null)
               : this.state.focusedApprovalId,
-          agent: { ...this.state.agent, status: 'thinking' },
+          agent: { ...this.state.agent, status: 'reasoning' },
         })
         break
       }
@@ -404,8 +404,8 @@ export class UIStore {
       } else {
         messages.push({ id: messageId, role: 'assistant', text: '', thinking: text, thinkingDone: false })
       }
-      // Don't change agent status — thinking is the "thinking" phase of
-      // the status, parallel to text streaming which flips to 'streaming'.
+      // Don't change agent status — reasoning is the "reasoning" phase of
+      // the status, parallel to text streaming which flips to 'generating'.
       this.state = { ...this.state, agent: { ...this.state.agent, messages } }
       return
     }
@@ -413,7 +413,7 @@ export class UIStore {
     // A RAF-buffered token stream can flush *after* agent.completed fires
     // (streams are unsequenced; events are processed synchronously).  Guard
     // against re-activating a terminal state: don't reset status to
-    // 'streaming' or re-mark a finalized message as streaming.
+    // 'generating' or re-mark a finalized message as streaming.
     if (this.state.agent.status === 'idle' || this.state.agent.status === 'error') return
     const { messageId, text } = payload as { messageId: string; text: string }
     const messages = [...this.state.agent.messages]
@@ -423,7 +423,7 @@ export class UIStore {
     } else {
       messages.push({ id: messageId, role: 'assistant', text, streaming: true })
     }
-    this.state = { ...this.state, agent: { ...this.state.agent, status: 'streaming', messages } }
+    this.state = { ...this.state, agent: { ...this.state.agent, status: 'generating', messages } }
   }
 }
 

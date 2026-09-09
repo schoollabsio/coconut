@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ToolCall } from './protocol'
-import { groupToolCalls, readGrouper, agentGrouper, defaultGroupers } from './toolGrouping'
+import { groupToolCalls, readGrouper, agentGrouper, defaultGroupers, isLastGroup } from './toolGrouping'
 
 function tc(overrides: Partial<ToolCall> = {}): ToolCall {
   return {
@@ -273,5 +273,39 @@ describe('defaultGroupers', () => {
     expect(defaultGroupers[0]).toBe(agentGrouper)
     expect(defaultGroupers[1]).toBe(readGrouper)
     expect(defaultGroupers).toHaveLength(2)
+  })
+})
+
+describe('isLastGroup', () => {
+  it('returns true for the last group', () => {
+    const groups = groupToolCalls([tc({ id: 'c1' }), tc({ id: 'c2' })])
+    expect(isLastGroup(groups, 0)).toBe(false)
+    expect(isLastGroup(groups, 1)).toBe(true)
+    expect(isLastGroup(groups, 2)).toBe(false)
+  })
+
+  it('returns true when there is only one group', () => {
+    const groups = groupToolCalls([tc({ id: 'c1' })])
+    expect(isLastGroup(groups, 0)).toBe(true)
+  })
+
+  it('returns false for empty groups array', () => {
+    expect(isLastGroup([], 0)).toBe(false)
+    expect(isLastGroup([], -1)).toBe(false)
+  })
+
+  it('returns true for groups with multiple calls', () => {
+    const groups = groupToolCalls([tc({ id: 'c1' }), tc({ id: 'c2' }), tc({ id: 'c3' })])
+    expect(isLastGroup(groups, 0)).toBe(false)
+    expect(isLastGroup(groups, 1)).toBe(false)
+    expect(isLastGroup(groups, 2)).toBe(true)
+  })
+
+  it('handles grouped tool calls correctly', () => {
+    const groups = groupToolCalls([tc({ id: 'c1' }), tc({ id: 'c2' }), tc({ id: 'c3' })])
+    // Two reads form a group, one is a singleton
+    expect(groups).toHaveLength(2)
+    expect(isLastGroup(groups, 0)).toBe(false)
+    expect(isLastGroup(groups, 1)).toBe(true)
   })
 })

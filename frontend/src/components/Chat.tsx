@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChatMessage } from '../protocol'
 import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import { useUIState } from '../store'
 import { Markdown } from './Markdown'
 import { FadingTail, StreamingText } from './StreamingText'
+
+type ThinkingGroup = {
+  messages: ChatMessage[]
+  totalMs: number
+}
+
+type GroupedMessage = 
+  | { type: 'consolidated'; group: ThinkingGroup; key: string }
+  | { type: 'single'; message: ChatMessage; key: string }
 
 const MAX_INPUT_HEIGHT = 160
 
@@ -12,6 +22,50 @@ function formatThinkingDuration(ms: number): string {
   if (secs < 60) return `${secs} ${secs === 1 ? 'second' : 'seconds'}`
   const mins = Math.round(secs / 60)
   return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`
+}
+
+/** Check if a message is "thinking-only" (assistant message with thinking but no text). */
+function isThinkingOnly(m: ChatMessage): boolean {
+  return (
+    m.role === 'assistant' &&
+    !!m.thinking &&
+    m.thinking.length > 0 &&
+    m.thinkingDone === true &&
+    (!m.text || m.text.length === 0)
+  )
+}
+
+/** Group consecutive thinking-only messages for consolidation. */
+function groupMessages(messages: ChatMessage[]): GroupedMessage[] {
+  const result: GroupedMessage[] = []
+  let i = 0
+  
+  while (i < messages.length) {
+    if (isThinkingOnly(messages[i])) {
+      const group: ChatMessage[] = []
+      let totalMs = 0
+      while (i < messages.length && isThinkingOnly(messages[i])) {
+        group.push(messages[i])
+        totalMs += messages[i].thinkingMs || 0
+        i++
+      }
+      result.push({
+        type: 'consolidated' as const,
+        group: { messages: group, totalMs },
+        key: group[0].id + '-thinking'
+      })
+    } else {
+      const m = messages[i]
+      result.push({
+        type: 'single' as const,
+        message: m,
+        key: m.id
+      })
+      i++
+    }
+  }
+  
+  return result
 }
 
 function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
@@ -60,7 +114,7 @@ function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: strin
   // vertical line, and a top fade shadow when content overflows.
   return (
     <div className="mb-2">
-      <div className="text-xs italic text-dim mb-1 flex items-center gap-1">
+      <div className="text-xs italic text-dim mb-1 flex items-center gap-2">
         <svg className="w-3 h-3 animate-spin text-dim" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.3" />
           <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -85,13 +139,48 @@ function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: strin
   )
 }
 
+/** ConsolidatedThinkingBlock renders multiple thinking blocks as a single collapsed entry. */
+function ConsolidatedThinkingBlock({ group }: { group: ThinkingGroup }) {
+  const [expanded, setExpanded] = useState(false)
+  
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="text-xs italic text-dim hover:text-muted transition-colors cursor-pointer text-left"
+      >
+        Thought for {formatThinkingDuration(group.totalMs)}
+      </button>
+      {expanded && (
+        <div className="mt-1 text-xs italic text-dim max-h-[10lh] overflow-y-auto whitespace-pre-wrap">
+          {group.messages.map((m, idx) => (
+            <div key={m.id} className={idx > 0 ? 'mt-2 border-l-2 border-line pl-3' : ''}>
+              {m.thinking}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Chat({ client }: { client: BackendClient }) {
   const messages = useUIState((s) => s.agent.messages)
   const status = useUIState((s) => s.agent.status)
   const busy = status !== 'idle' && status !== 'error'
+  // Group messages for consolidation
+  const groupedMessages = groupMessages(messages)
   const lastMsg = messages[messages.length - 1]
-  const thinkingActive = !!lastMsg && lastMsg.role === 'assistant' &&
-    !!lastMsg.thinking && !lastMsg.thinkingDone
+  
+  // Check if there's active thinking (streaming or not yet done)
+  const hasActiveThinking = groupedMessages.some(g => 
+    g.type === 'single' && g.message.thinking && !g.message.thinkingDone
+  ) || 
+  groupedMessages.some(g => 
+    g.type === 'consolidated' && g.group.messages.some(m => m.thinking && !m.thinkingDone)
+  )
+  const thinkingActive = hasActiveThinking
 
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -131,15 +220,27 @@ export function Chat({ client }: { client: BackendClient }) {
         {messages.length === 0 && (
           <div className="text-faint text-sm italic px-2 pt-4">No messages yet — ask the agent anything.</div>
         )}
-        {messages.map((m) =>
-          m.role === 'user' ? (
-            <div key={m.id} className="flex justify-end">
-              <div className="bg-surface2 text-ink rounded-3xl px-4 py-3 max-w-[85%] whitespace-pre-wrap">
-                {m.text}
+        {groupedMessages.map((g) => {
+          if (g.type === 'consolidated') {
+            return <ConsolidatedThinkingBlock key={g.key} group={g.group} />
+          }
+          
+          const m = g.message
+          
+          // User message - render with right alignment
+          if (m.role === 'user') {
+            return (
+              <div key={m.id} className="flex justify-end">
+                <div className="bg-surface2 text-ink rounded-3xl px-4 py-3 max-w-[85%] whitespace-pre-wrap">
+                  {m.text}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div key={m.id}>
+            )
+          }
+          
+          // Assistant message (single or with text)
+          return (
+            <div key={g.key}>
               {m.thinking && m.thinking.length > 0 && (
                 <ThinkingBlock
                   thinking={m.thinking}
@@ -149,10 +250,10 @@ export function Chat({ client }: { client: BackendClient }) {
               )}
               {m.text && (m.streaming ? <StreamingText text={m.text} /> : <Markdown text={m.text} />)}
             </div>
-          ),
-        )}
+          )
+        })}
         {busy && !lastMsg?.streaming && !thinkingActive &&
-          (status === 'awaiting_approval' ? (
+          (status === 'awaiting_tool_approval' ? (
             <span className="text-dim text-sm italic subtle-pulse">
               waiting for your approval…
             </span>
