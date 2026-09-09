@@ -12,8 +12,9 @@ type ThinkingGroup = {
 }
 
 type GroupedMessage = 
-  | { type: 'consolidated'; group: ThinkingGroup; key: string }
-  | { type: 'single'; message: ChatMessage; key: string }
+  | { type: 'assistant'; message: ChatMessage; preThinking: ThinkingGroup | null; key: string }
+  | { type: 'user'; message: ChatMessage; key: string }
+  | { type: 'orphaned_thinking'; group: ThinkingGroup; key: string }
 
 const MAX_INPUT_HEIGHT = 160
 
@@ -24,7 +25,7 @@ function formatThinkingDuration(ms: number): string {
   return `${mins} ${mins === 1 ? 'minute' : 'minutes'}`
 }
 
-/** Check if a message is "thinking-only" (assistant message with thinking but no text). */
+/** Check if a message is a thinking-only (assistant with thinking but no text). */
 function isThinkingOnly(m: ChatMessage): boolean {
   return (
     m.role === 'assistant' &&
@@ -34,32 +35,61 @@ function isThinkingOnly(m: ChatMessage): boolean {
     (!m.text || m.text.length === 0)
   )
 }
-
-/** Group consecutive thinking-only messages for consolidation. */
+/** Group messages, merging thinking groups into following assistant messages with text. */
 function groupMessages(messages: ChatMessage[]): GroupedMessage[] {
   const result: GroupedMessage[] = []
   let i = 0
   
   while (i < messages.length) {
-    if (isThinkingOnly(messages[i])) {
-      const group: ChatMessage[] = []
-      let totalMs = 0
-      while (i < messages.length && isThinkingOnly(messages[i])) {
-        group.push(messages[i])
-        totalMs += messages[i].thinkingMs || 0
-        i++
+    // Collect any consecutive thinking-only messages
+    const preThinking: ChatMessage[] = []
+    while (i < messages.length && isThinkingOnly(messages[i])) {
+      preThinking.push(messages[i])
+      i++
+    }
+    
+    if (i >= messages.length) {
+      // End of stream with trailing thinking-only messages
+      if (preThinking.length > 0) {
+        const totalMs = preThinking.reduce((sum, m) => sum + (m.thinkingMs || 0), 0)
+        result.push({
+          type: 'orphaned_thinking' as const,
+          group: { messages: preThinking, totalMs },
+          key: 'orphaned-' + preThinking[0].id
+        })
+      }
+      break
+    }
+    
+    const nextMsg = messages[i]
+    
+    if (nextMsg.role === 'user') {
+      // User message - output any pending thinking first
+      if (preThinking.length > 0) {
+        const totalMs = preThinking.reduce((sum, m) => sum + (m.thinkingMs || 0), 0)
+        result.push({
+          type: 'orphaned_thinking' as const,
+          group: { messages: preThinking, totalMs },
+          key: 'orphaned-' + nextMsg.id
+        })
       }
       result.push({
-        type: 'consolidated' as const,
-        group: { messages: group, totalMs },
-        key: group[0].id + '-thinking'
+        type: 'user' as const,
+        message: nextMsg,
+        key: nextMsg.id
       })
-    } else {
-      const m = messages[i]
+      i++
+    } else if (nextMsg.role === 'assistant') {
+      // Assistant message - attach pre-thinking if exists
+      const hasPreThinking = preThinking.length > 0
+      const totalMs = hasPreThinking
+        ? preThinking.reduce((sum, m) => sum + (m.thinkingMs || 0), 0)
+        : 0
       result.push({
-        type: 'single' as const,
-        message: m,
-        key: m.id
+        type: 'assistant' as const,
+        message: nextMsg,
+        preThinking: hasPreThinking ? { messages: preThinking, totalMs } : null,
+        key: nextMsg.id
       })
       i++
     }
@@ -67,6 +97,7 @@ function groupMessages(messages: ChatMessage[]): GroupedMessage[] {
   
   return result
 }
+
 
 function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
   const [expanded, setExpanded] = useState(false)
@@ -174,13 +205,63 @@ export function Chat({ client }: { client: BackendClient }) {
   const lastMsg = messages[messages.length - 1]
   
   // Check if there's active thinking (streaming or not yet done)
-  const hasActiveThinking = groupedMessages.some(g => 
-    g.type === 'single' && g.message.thinking && !g.message.thinkingDone
-  ) || 
-  groupedMessages.some(g => 
-    g.type === 'consolidated' && g.group.messages.some(m => m.thinking && !m.thinkingDone)
-  )
+  const hasActiveThinking = groupedMessages.some(g => {
+    if (g.type === 'assistant') {
+      return g.message.thinking && !g.message.thinkingDone
+    }
+    if (g.type === 'orphaned_thinking') {
+      return g.group.messages.some(m => m.thinking && !m.thinkingDone)
+    }
+    return false
+  })
   const thinkingActive = hasActiveThinking
+
+/** PreThinkingBlock renders orphaned thinking as a collapsed header. */
+function PreThinkingBlock({ totalMs, messages }: { totalMs: number; messages: ThinkingGroup['messages'] }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="text-xs italic text-dim hover:text-muted transition-colors cursor-pointer text-left"
+      >
+        Thought for {formatThinkingDuration(totalMs)}
+      </button>
+      {expanded && (
+        <div className="mt-1 text-xs italic text-dim max-h-[10lh] overflow-y-auto whitespace-pre-wrap">
+          {messages.map((m, idx) => (
+            <div key={m.id} className={idx > 0 ? 'mt-2 border-l-2 border-line pl-3' : ''}>
+              {m.thinking}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** MessageContent renders an assistant message with optional thinking. */
+function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }: {
+  thinking?: string
+  thinkingDone?: boolean
+  thinkingMs?: number
+  text: string
+  streaming?: boolean
+}) {
+  return (
+    <>
+      {thinking && thinking.length > 0 && (
+        <ThinkingBlock
+          thinking={thinking}
+          thinkingDone={!!thinkingDone}
+          thinkingMs={thinkingMs}
+        />
+      )}
+      {text && (streaming ? <StreamingText text={text} /> : <Markdown text={text} />)}
+    </>
+  )
+}
 
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -221,14 +302,14 @@ export function Chat({ client }: { client: BackendClient }) {
           <div className="text-faint text-sm italic px-2 pt-4">No messages yet — ask the agent anything.</div>
         )}
         {groupedMessages.map((g) => {
-          if (g.type === 'consolidated') {
+          // Handle orphaned thinking blocks (between messages)
+          if (g.type === 'orphaned_thinking') {
             return <ConsolidatedThinkingBlock key={g.key} group={g.group} />
           }
           
-          const m = g.message
-          
-          // User message - render with right alignment
-          if (m.role === 'user') {
+          // User message
+          if (g.type === 'user') {
+            const m = g.message
             return (
               <div key={m.id} className="flex justify-end">
                 <div className="bg-surface2 text-ink rounded-3xl px-4 py-3 max-w-[85%] whitespace-pre-wrap">
@@ -238,19 +319,34 @@ export function Chat({ client }: { client: BackendClient }) {
             )
           }
           
-          // Assistant message (single or with text)
-          return (
-            <div key={g.key}>
-              {m.thinking && m.thinking.length > 0 && (
-                <ThinkingBlock
-                  thinking={m.thinking}
-                  thinkingDone={!!m.thinkingDone}
-                  thinkingMs={m.thinkingMs}
-                />
-              )}
-              {m.text && (m.streaming ? <StreamingText text={m.text} /> : <Markdown text={m.text} />)}
-            </div>
-          )
+          // Assistant message - may have pre-thinking attached
+          if (g.type === 'assistant') {
+            const m = g.message
+            const { preThinking } = g
+            const key = g.key
+            
+            return (
+              <div key={key}>
+                {preThinking && preThinking.messages.length > 0 && (
+                  <PreThinkingBlock 
+                    totalMs={preThinking.totalMs}
+                    messages={preThinking.messages}
+                  />
+                )}
+                {m.text && (
+                  <MessageContent 
+                    thinking={m.thinking}
+                    thinkingDone={!!m.thinkingDone}
+                    thinkingMs={m.thinkingMs}
+                    text={m.text}
+                    streaming={m.streaming ?? false}
+                  />
+                )}
+              </div>
+            )
+          }
+          
+          return null
         })}
         {busy && !lastMsg?.streaming && !thinkingActive &&
           (status === 'awaiting_tool_approval' ? (
