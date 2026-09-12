@@ -1,0 +1,34 @@
+# Minimal v3 config for the throwaway spike (static HTML assets, no Vite).
+# `wails3 dev` reads `dev_mode` and runs the executes list on every Go change:
+#   blocking -> rebuild the binary, primary -> run it (killing the previous).
+version: '3'
+
+info:
+  companyName: "Coconut"
+  productName: "coconut-v3-spike"
+  productIdentifier: "com.jschool.coconut.v3spike"
+  version: "0.0.1"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - bin
+    file:
+      - .DS_Store
+    watched_extension:
+      - "*.go"
+    git: true
+  executes:
+    - cmd: go build -o ./bin/spike .
+      type: blocking
+    # wails3 dev sets FRONTEND_DEVSERVER_URL=http://localhost:9245 and proxies
+    # all asset requests there, so serve the static spike assets on that port.
+    # /wails/runtime.js is always served locally by Wails itself.
+    - cmd: python3 -m http.server 9245 --directory assets --bind 127.0.0.1
+      type: background
+    - cmd: ./bin/spike
+      type: primary

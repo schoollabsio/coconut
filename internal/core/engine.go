@@ -19,18 +19,32 @@ import (
 // EngineConfig wires the engine to its environment. Emit is invoked on
 // the actor goroutine with a ready-to-serialize envelope; it must be
 // safe to call from there (wails EventsEmit is).
+// BootSpec is the one-shot bootstrap target for a window opened for a
+// specific agent ("open in new window"). Consumed by the first
+// session.restore: that agent opens in that workspace instead of the
+// shared "last agent".
+type BootSpec struct {
+	WorkspacePath string
+	AgentSlug     string
+	AgentName     string // for state + window title
+	SessionFile   string // optional: a specific session to restore
+}
+
 type EngineConfig struct {
 	ConfigDir     string                 // app config dir (agent/, sessions/, settings.json inside)
 	ExtensionPath string                 // pi-extension/coconut.ts
 	SelfPath      string                 // os.Executable(), for sidecar resolution
 	PickDir       func() (string, error) // native directory dialog
 	Emit          func(env any)
+	Boot          *BootSpec              // optional one-shot bootstrap target
 }
 
 // Engine is the backend orchestrator. All state mutation happens on the
 // actor goroutine (PLAN.md §8.1); public methods are safe from anywhere.
 type Engine struct {
 	cfg EngineConfig
+
+	bootSpec *BootSpec // consumed once by session.restore (actor-only)
 
 	inbox chan input
 	done  chan struct{}
@@ -108,6 +122,7 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 
 	e := &Engine{
 		cfg:            cfg,
+		bootSpec:       cfg.Boot,
 		inbox:          make(chan input, 256),
 		done:           make(chan struct{}),
 		state:          newDomainState(),

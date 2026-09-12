@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Markdown } from './Markdown'
+import { diagnose } from '../backend'
 
 const MemoMarkdown = memo(Markdown)
 
@@ -56,10 +57,20 @@ export function FadingTail({ text, className }: { text: string; className?: stri
   const prevTextRef = useRef('')
   const counterRef = useRef(0)
 
+  // TEMP (flicker diagnosis): report lifecycle to the backend log.
+  useEffect(() => {
+    diagnose('tail.mount', `len=${text.length}`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     if (text !== prevTextRef.current) {
+      const replaced = !text.startsWith(prevTextRef.current)
       const nextId = ++counterRef.current
       setChunks((prev) => diffChunks(prevTextRef.current, prev, text, nextId))
+      if (replaced && prevTextRef.current.length > 0) {
+        diagnose('tail.reset', `prev=${prevTextRef.current.length} next=${text.length}`)
+      }
       prevTextRef.current = text
     }
   }, [text])

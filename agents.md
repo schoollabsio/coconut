@@ -108,9 +108,10 @@ exposes pi events raw.
 
 ## Development
 
-Requires Go ≥ 1.24 (go.mod says go 1.26), Node ≥ 20, and the wails CLI:
+Requires Go ≥ 1.24 (go.mod says go 1.26), Node ≥ 20, and the wails **v3** CLI
+(installs as `wails3`; the v2 CLI does not understand a v3 go.mod):
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v3/cmd/wails@beta
 ```
 
 ### Dev against the fake sidecar (token-free)
@@ -119,14 +120,14 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 go build -o build/bin/fakepi ./cmd/fakepi
 export COCONUT_PI_BINARY="$PWD/build/bin/fakepi"
 export COCONUT_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
-wails dev
+wails3 dev
 ```
 
 ### Dev against the real pi
 
 ```bash
 unset COCONUT_PI_BINARY COCONUT_PI_SCENARIO
-wails dev
+wails3 dev
 ```
 The app uses an isolated config dir; enter an API key once in the Settings
 modal. `COCONUT_CONFIG_DIR` overrides the config location.

@@ -1,0 +1,92 @@
+version: '3'
+
+tasks:
+  go:mod:tidy:
+    summary: Runs `go mod tidy`
+    internal: true
+    run: once
+    cmds:
+      - go mod tidy
+
+  install:frontend:deps:
+    summary: Install frontend dependencies
+    run: once
+    cmds:
+      - task: install:frontend:deps:{{.PACKAGE_MANAGER}}
+
+  install:frontend:deps:bun:
+    dir: frontend
+    sources:
+      - package.json
+      - bun.lock
+    generates:
+      - node_modules
+    preconditions:
+      - sh: bun --version
+        msg: "bun not found: install from https://bun.sh"
+    cmds:
+      - bun install
+
+  generate:bindings:
+    summary: Generates typed bindings for the frontend
+    run: once
+    deps:
+      - task: go:mod:tidy
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - exclude: "**/*_test.go"
+      - exclude: frontend/**/*
+      - exclude: spike/**/*
+      - exclude: cmd/fakepi/**/*
+    generates:
+      - frontend/bindings/**/*
+    cmds:
+      - wails3 generate bindings -clean=true -ts -i -d frontend/bindings
+
+  build:frontend:
+    summary: Build the frontend project (frontend/dist)
+    run: once
+    dir: frontend
+    sources:
+      - "**/*"
+      - exclude: node_modules/**/*
+      - exclude: dist/**/*
+    generates:
+      - dist/**/*
+    deps:
+      - task: install:frontend:deps
+      - task: generate:bindings
+    cmds:
+      - task: frontend:run
+        vars:
+          SCRIPT: build
+
+  frontend:run:
+    summary: Run a frontend script with the selected package manager
+    cmds:
+      - task: frontend:run:{{.PACKAGE_MANAGER}}
+        vars:
+          SCRIPT: "{{.SCRIPT}}"
+    vars:
+      SCRIPT: "{{.SCRIPT}}"
+
+  frontend:run:bun:
+    dir: frontend
+    cmds:
+      - bun run {{.SCRIPT}}
+    vars:
+      SCRIPT: "{{.SCRIPT}}"
+
+  dev:frontend:
+    summary: Runs the frontend in development mode (Vite dev server)
+    deps:
+      - task: install:frontend:deps
+    cmds:
+      - task: dev:frontend:{{.PACKAGE_MANAGER}}
+
+  dev:frontend:bun:
+    dir: frontend
+    cmds:
+      - bun run dev -- --port {{.VITE_PORT}} --strictPort

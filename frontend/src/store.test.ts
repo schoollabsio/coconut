@@ -72,9 +72,11 @@ describe('UIStore', () => {
   it('replaces the streaming message when its final version arrives', async () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(1))
-    // In the real flow, agent.started sets status to 'reasoning' before
-    // any token streams are emitted.
+    // In the real flow, agent.started moves status off 'idle' before any
+    // token streams are emitted (the late-stream guard drops streams while
+    // the agent is idle/error).
     s.applyBackendMessage(ev(2, Ev.AgentStarted))
+    s.applyBackendMessage(ev(3, Ev.AgentStatusChanged, { status: 'reasoning' }))
     s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hel' } })
     s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hello' } })
     await new Promise((r) => setTimeout(r, 5)) // let the rAF flush land
@@ -83,10 +85,52 @@ describe('UIStore', () => {
     expect(msgs.find((m) => m.id === 'm9')?.text).toBe('hello')
     expect(msgs.find((m) => m.id === 'm9')?.streaming).toBe(true)
 
-    s.applyBackendMessage(ev(3, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'hello' }))
+    s.applyBackendMessage(ev(4, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'hello' }))
     msgs = s.state.agent.messages
     expect(msgs.filter((m) => m.id === 'm9')).toHaveLength(1)
     expect(msgs.find((m) => m.id === 'm9')?.streaming).toBeUndefined()
+  })
+
+  it('drops late token streams after finalization, before agent.completed (end-of-message flicker)', async () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStarted))
+    s.applyBackendMessage(ev(3, Ev.AgentStatusChanged, { status: 'reasoning' }))
+    s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hello' } })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(s.state.agent.messages.find((m) => m.id === 'm9')?.streaming).toBe(true)
+
+    // The message finalizes, but the run is not yet settled (no
+    // agent.completed), so the status guard alone does not cover this.
+    s.applyBackendMessage(ev(4, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'hello' }))
+    s.applyBackendMessage(ev(5, Ev.AgentStatusChanged, { status: 'thinking' }))
+    expect(s.state.agent.messages.find((m) => m.id === 'm9')?.streaming).toBeUndefined()
+
+    // A duplicate token stream — buffered before finalization — flushes
+    // now. It must not re-mark the message as streaming (that swaps the
+    // renderer back to StreamingText and re-fades the whole tail from
+    // opacity 0) or re-set the status to 'generating'.
+    s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'hello' } })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(s.state.agent.messages.find((m) => m.id === 'm9')?.streaming).toBeFalsy()
+    expect(s.state.agent.status).toBe('thinking')
+  })
+
+  it('clears finalized ids on resync so a fresh run is unaffected', async () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStarted))
+    s.applyBackendMessage(ev(3, Ev.AgentStatusChanged, { status: 'reasoning' }))
+    s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'a' } })
+    await new Promise((r) => setTimeout(r, 5))
+    s.applyBackendMessage(ev(4, Ev.AgentMessage, { id: 'm9', role: 'assistant', text: 'a' }))
+    // Resync (snapshot) resets the finalized set…
+    s.applyBackendMessage(snap(5))
+    s.applyBackendMessage(ev(6, Ev.AgentStatusChanged, { status: 'reasoning' }))
+    // …so a stream for that id is no longer dropped.
+    s.applyBackendMessage({ type: 'stream', name: Stream.AgentToken, payload: { messageId: 'm9', text: 'a' } })
+    await new Promise((r) => setTimeout(r, 5))
+    expect(s.state.agent.messages.some((m) => m.id === 'm9')).toBe(true)
   })
 
   it('ignores token streams that flush after agent.completed', async () => {
@@ -102,13 +146,13 @@ describe('UIStore', () => {
     s.applyBackendMessage(ev(4, Ev.AgentCompleted))
     expect(s.state.agent.status).toBe('idle')
     const msg = s.state.agent.messages.find((m) => m.id === 'm9')
-    expect(msg?.streaming).toBe(false)
+    expect(msg?.streaming).toBeFalsy()
 
     // Now let the buffered stream flush.
     await new Promise((r) => setTimeout(r, 5))
     expect(s.state.agent.status).toBe('idle') // not reset to 'generating'
     const after = s.state.agent.messages.find((m) => m.id === 'm9')
-    expect(after?.streaming).toBe(false) // still finalized, not re-marked
+    expect(after?.streaming).toBeFalsy() // still finalized, not re-marked
   })
 
   it('tracks approvals: focus on request, clear on resolve', () => {
@@ -139,6 +183,43 @@ describe('UIStore', () => {
     s.applyBackendMessage(snap(1))
     s.applyBackendMessage(ev(2, Ev.ContentUpdated, { path: 'content.md', content: '# Hi', updatedAt: 1 }))
     expect(s.state.content?.path).toBe('content.md')
+  })
+})
+
+describe('window-sender filtering', () => {
+  function snapTagged(seq: number): SnapshotMessage {
+    return { ...snap(seq), windowName: 'main' }
+  }
+
+  it('drops events sent to another window', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snapTagged(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStatusChanged, { status: 'error' }), 'win-1')
+    expect(s.state.agent.status).toBe('idle') // not applied
+    expect(s.state.lastBackendSeq).toBe(1)
+  })
+
+  it('applies events sent to its own window', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snapTagged(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStatusChanged, { status: 'reasoning' }), 'main')
+    expect(s.state.agent.status).toBe('reasoning')
+    expect(s.state.lastBackendSeq).toBe(2)
+  })
+
+  it('applies events with no sender (pre-name or legacy)', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snapTagged(1))
+    s.applyBackendMessage(ev(2, Ev.AgentStatusChanged, { status: 'reasoning' }))
+    expect(s.state.agent.status).toBe('reasoning')
+  })
+
+  it('applies sent events before the snapshot identifies the window', () => {
+    const s = new UIStore()
+    // windowName unknown yet — cannot filter; pass-through is correct
+    // (App.tsx buffers these until the snapshot lands anyway).
+    s.applyBackendMessage(ev(1, Ev.AgentStatusChanged, { status: 'reasoning' }), 'main')
+    expect(s.state.agent.status).toBe('reasoning')
   })
 })
 

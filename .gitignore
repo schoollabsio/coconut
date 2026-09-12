@@ -1,10 +1,12 @@
 # Build
-/build/bin
+bin/
 /frontend/dist
 /coconut
 
 # Pi sidecar artifacts
 /build/sidecar
+# Local agent sessions/transcripts (per-workspace state)
+.coconut/
 # Local fakepi dev binary (COCONUT_PI_BINARY override; canonical build is /build/bin/fakepi)
 /fakepi
 

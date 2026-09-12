@@ -458,3 +458,132 @@ func TestSessionRestoresToolCalls(t *testing.T) {
 		t.Fatalf("phase 2: content not restored: %+v", snap2.State.Content)
 	}
 }
+
+// TestBootSpecTwoEngines is the Phase 2 core guarantee: a window booted for
+// a specific agent (BootSpec via session.restore) runs independently of
+// another engine on the same workspace, each with its own seq space and
+// event sink.
+func TestBootSpecTwoEngines(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test")
+	}
+
+	fakepi := buildFakepi(t)
+	scenario, err := filepath.Abs("../../testdata/scenarios/todo-app.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := t.TempDir()
+
+	t.Setenv("COCONUT_PI_BINARY", fakepi)
+	t.Setenv("COCONUT_PI_SCENARIO", scenario)
+
+	// Engine A: the "main window" — plain workspace.set bootstrap.
+	collectorA := &envelopeCollector{}
+	engineA, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collectorA.emit})
+	if err != nil {
+		t.Fatalf("NewEngine A: %v", err)
+	}
+	defer engineA.Shutdown()
+	go engineA.Run(context.Background())
+
+	resp := sendCommand(t, engineA, protocol.CmdWorkspaceSet, map[string]any{"path": workspace})
+	if !resp.OK {
+		t.Fatalf("workspace.set (A): %+v", resp.Error)
+	}
+	if _, ok := collectorA.waitFor(t, 10*time.Second, "session.restored", isEvent(protocol.EvSessionRestored)); !ok {
+		t.Fatal("A: session.restored never emitted")
+	}
+
+	// Engine B: the "new window" — booted for agent "beta" in the same
+	// workspace. session.restore must consume the BootSpec.
+	collectorB := &envelopeCollector{}
+	engineB, err := NewEngine(EngineConfig{
+		ConfigDir: t.TempDir(),
+		Emit:      collectorB.emit,
+		Boot: &BootSpec{
+			WorkspacePath: workspace,
+			AgentSlug:     "beta",
+			AgentName:     "Beta Agent",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine B: %v", err)
+	}
+	defer engineB.Shutdown()
+	go engineB.Run(context.Background())
+
+	resp = sendCommand(t, engineB, protocol.CmdSessionRestore, map[string]any{})
+	if !resp.OK {
+		t.Fatalf("session.restore (B): %+v", resp.Error)
+	}
+	if _, ok := collectorB.waitFor(t, 10*time.Second, "session.restored", isEvent(protocol.EvSessionRestored)); !ok {
+		t.Fatal("B: session.restored never emitted (boot spec not consumed?)")
+	}
+
+	// B landed on the boot target.
+	var snapB protocol.Snapshot
+	if err := json.Unmarshal(engineB.RequestSnapshot(), &snapB); err != nil {
+		t.Fatalf("snapshot B: %v", err)
+	}
+	if snapB.State.Workspace.Path != workspace {
+		t.Fatalf("B workspace = %q, want %q", snapB.State.Workspace.Path, workspace)
+	}
+	if snapB.State.AgentSlug != "beta" {
+		t.Fatalf("B agent slug = %q, want beta", snapB.State.AgentSlug)
+	}
+	if snapB.State.AgentName != "Beta Agent" {
+		t.Fatalf("B agent name = %q, want \"Beta Agent\"", snapB.State.AgentName)
+	}
+
+	// Independence: drive a full turn on B while A idles; B's events must
+	// not leak into A's sink.
+	resp = sendCommand(t, engineB, protocol.CmdAgentStart, map[string]any{"prompt": "the delete button is broken"})
+	if !resp.OK {
+		t.Fatalf("agent.start (B): %+v", resp.Error)
+	}
+	if _, ok := collectorB.waitFor(t, 10*time.Second, "approval", isEvent(protocol.EvApprovalRequested)); !ok {
+		t.Fatal("B: approval never requested")
+	}
+	collectorB.mu.Lock()
+	var bSawApproval bool
+	for _, raw := range collectorB.envs {
+		var head struct{ Type, Name string }
+		_ = json.Unmarshal(raw, &head)
+		if head.Type == "event" && head.Name == protocol.EvApprovalRequested {
+			bSawApproval = true
+		}
+	}
+	collectorB.mu.Unlock()
+	if !bSawApproval {
+		t.Fatal("B: approval event missing from B's sink")
+	}
+	collectorA.mu.Lock()
+	var aSawApproval bool
+	for _, raw := range collectorA.envs {
+		var head struct{ Type, Name string }
+		_ = json.Unmarshal(raw, &head)
+		if head.Type == "event" && head.Name == protocol.EvApprovalRequested {
+			aSawApproval = true
+		}
+	}
+	collectorA.mu.Unlock()
+	if aSawApproval {
+		t.Fatal("event leak: A's sink saw B's approval event")
+	}
+
+	// B's seq space is independent: starts at 1, not after A's.
+	collectorB.mu.Lock()
+	var firstSeq uint64
+	for _, raw := range collectorB.envs {
+		var head struct{ Type string `json:"type"`; Seq uint64 `json:"seq"` }
+		_ = json.Unmarshal(raw, &head)
+		if head.Type == "event" && (firstSeq == 0 || head.Seq < firstSeq) {
+			firstSeq = head.Seq
+		}
+	}
+	collectorB.mu.Unlock()
+	if firstSeq != 1 {
+		t.Fatalf("B first seq = %d, want 1 (seq spaces must be per-engine)", firstSeq)
+	}
+}

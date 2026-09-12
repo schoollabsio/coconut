@@ -94,6 +94,8 @@ const (
 	CmdSettingsGet      = "settings.get"
 	CmdSettingsSave     = "settings.save"
 	CmdSettingsValidate = "settings.validate"
+	CmdWindowNew        = "window.new" // open an agent in a NEW window
+	CmdDiagnostics      = "diagnostics.log" // TEMP: frontend reports UI lifecycle for flicker debugging
 )
 
 // ---------------------------------------------------------------------------
@@ -166,6 +168,15 @@ type SessionSummary struct {
 
 type WorkspaceSetPayload struct {
 	Path string `json:"path"`
+}
+
+// WindowNewPayload opens a sibling window booted to the given agent in the
+// given workspace (same or different from the caller's).
+type WindowNewPayload struct {
+	Workspace   string `json:"workspace"`
+	AgentSlug   string `json:"agentSlug"`
+	AgentName   string `json:"agentName,omitempty"`   // window title
+	SessionFile string `json:"sessionFile,omitempty"` // specific session (optional)
 }
 
 type AgentStartPayload struct {

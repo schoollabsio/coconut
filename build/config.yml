@@ -1,0 +1,44 @@
+# v3 project configuration for coconut.
+# `wails3 dev` reads dev_mode from here (the watcher pipeline);
+# `info` is used by `wails3 update build-assets`.
+version: '3'
+
+info:
+  companyName: "jschool"
+  productName: "coconut"
+  productIdentifier: "com.jschool.coconut"
+  description: "A human-in-the-loop coding agent"
+  copyright: "(c) 2025, jschool"
+  comments: "coconut — approval-gated coding agent"
+  version: "0.1.0"
+
+# Dev mode configuration: what `wails3 dev` runs.
+#   blocking  — build the dev Go binary (bin/coconut)
+#   background — Vite dev server on the Wails contract port (9245)
+#   primary   — launch the app (darwin:run creates a .dev.app bundle)
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+      - build/sidecar
+      - spike
+      - testdata
+      - .coconut   # agent sessions/transcripts — written on every turn
+    file:
+      - .DS_Store
+      - .gitignore
+      - "*_test.go"
+    git: true
+  executes:
+    - cmd: wails3 build DEV=true
+      type: blocking
+    - cmd: wails3 task common:dev:frontend
+      type: background
+    - cmd: wails3 task run
+      type: primary

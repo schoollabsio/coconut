@@ -1,0 +1,45 @@
+version: '3'
+
+vars:
+  APP_NAME: "coconut"
+  BIN_DIR: "bin"
+  PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "bun"}}'
+  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  # Target OS for build/package/run. Defaults to the host OS, and is
+  # overridden by `wails3 build GOOS=...` (or the GOOS env var).
+  GOOS: '{{.GOOS | default OS}}'
+
+includes:
+  common: ./build/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+
+tasks:
+  dev:
+    summary: Runs the app in development mode (Vite dev server + Go watcher)
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  build:
+    summary: Builds the application
+    cmds:
+      - task: "{{.GOOS}}:build"
+
+  package:
+    summary: Packages the app into a .app bundle (with the pi sidecar)
+    cmds:
+      - task: "{{.GOOS}}:package"
+
+  run:
+    summary: Builds and runs the application
+    cmds:
+      - task: "{{.GOOS}}:run"
+
+  fakepi:
+    summary: Builds the fakepi test sidecar (bin/fakepi)
+    cmds:
+      - go build -o "{{.BIN_DIR}}/fakepi" ./cmd/fakepi
+
+  sidecar:
+    summary: Builds the bundled pi sidecar (build/sidecar/; needs bun)
+    cmds:
+      - bash scripts/build-sidecar.sh

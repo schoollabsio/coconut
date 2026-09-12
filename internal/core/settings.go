@@ -507,5 +507,16 @@ func saveState(configDir string, st appState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath(configDir), b, 0o600)
+	// Atomic write: multiple engines (windows) share this file; a torn
+	// write would corrupt the other's view. PID-suffixed tmp avoids
+	// cross-process collisions; rename is atomic on POSIX.
+	tmp := fmt.Sprintf("%s.%d.tmp", statePath(configDir), os.Getpid())
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, statePath(configDir)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

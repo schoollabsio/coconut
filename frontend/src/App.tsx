@@ -21,19 +21,30 @@ export default function App() {
   // second subscription, leaving the app deaf to all backend events.
   // Cleanup must fully undo setup; setup must be safe to run twice.
   useEffect(() => {
+    // TEMP (flicker diagnosis): report UI lifecycle to the backend log.
+    const diag = (kind: string, detail?: string) => {
+      client.command(Cmd.Diagnostics, { kind, detail: detail ?? '' }).catch(() => {})
+    }
+    diag('page.load', window.location.href)
+
     // Buffer events until the initial snapshot lands, then flush in
     // order (Appendix A: connect → snapshot → live events).
     let gotSnapshot = false
     let cancelled = false
-    const buffered: BackendMessage[] = []
+    type Buffered = { msg: BackendMessage; sender?: string }
+    const buffered: Buffered[] = []
     let resyncing = false
 
     const resync = async () => {
       if (resyncing) return
       resyncing = true
+      diag('store.resync', `lastSeq=${store.state.lastBackendSeq}`)
       try {
         const snap = await client.requestSnapshot()
-        if (!cancelled) store.applyBackendMessage(snap)
+        if (!cancelled) {
+          store.applyBackendMessage(snap)
+          diag('store.snapshot', `seq=${(snap as { seq?: number }).seq ?? '?'}`)
+        }
       } finally {
         resyncing = false
       }
@@ -42,13 +53,13 @@ export default function App() {
 
     let unsubscribe: (() => void) | undefined
     try {
-      unsubscribe = client.onMessage((msg) => {
+      unsubscribe = client.onMessage((msg, sender) => {
         if (cancelled) return
         if (!gotSnapshot) {
-          buffered.push(msg)
+          buffered.push({ msg, sender })
           return
         }
-        store.applyBackendMessage(msg)
+        store.applyBackendMessage(msg, sender)
       })
     } catch (err) {
       if (err instanceof BackendUnavailableError) {
@@ -69,7 +80,7 @@ export default function App() {
         if (cancelled) return
         store.applyBackendMessage(snap)
         gotSnapshot = true
-        for (const m of buffered) store.applyBackendMessage(m)
+        for (const { msg, sender } of buffered) store.applyBackendMessage(msg, sender)
       } catch (err) {
         if (!cancelled) console.error('boot failed', err)
       }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -584,8 +585,19 @@ func writeModelsJSON(dir string, cfg Settings) error {
 	if err != nil {
 		return fmt.Errorf("sidecar config: marshal models.json: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	// Skip if identical: multiple engines (windows) share this file and
+	// each sidecar boot materializes it — rewriting identical bytes is
+	// churn, and a concurrent reader could otherwise catch a torn write.
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	tmp := fmt.Sprintf("%s.%d.tmp", path, os.Getpid())
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("sidecar config: write models.json: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("sidecar config: rename models.json: %w", err)
 	}
 	return nil
 }

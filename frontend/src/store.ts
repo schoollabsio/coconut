@@ -92,9 +92,22 @@ export class UIStore {
   private streamBuffer = new Map<string, unknown>()
   private rafScheduled = false
   private notifCounter = 0
+  /** Message ids finalized via `agent.message.appended`. A token/thinking
+   *  stream buffered in the rAF queue can flush *after* the finalization
+   *  event (streams are unsequenced); it carries no new text and must not
+   *  re-mark the message as streaming — that would swap StreamingText back
+   *  in and re-fade the tail from opacity 0 (end-of-message flicker).
+   *  The status guard alone doesn't cover this window (agent_settled may
+   *  not have arrived yet). Cleared on snapshot/reset; ids are unique per
+   *  run, so no collisions. */
+  private finalized = new Set<string>()
 
   /** Filled in by the bootstrapper; used for seq-gap recovery. */
   resync: (() => void) | null = null
+
+  /** This window's sender tag (from the snapshot). Envelopes sent to
+   *  other windows are dropped — v3 broadcasts custom events app-wide. */
+  windowName: string | null = null
 
   subscribe = (listener: Listener): Unsubscribe => {
     this.listeners.add(listener)
@@ -167,7 +180,13 @@ export class UIStore {
   // backend messages
   // ------------------------------------------------------------------
 
-  applyBackendMessage(msg: BackendMessage) {
+  applyBackendMessage(msg: BackendMessage, sender?: string) {
+    // Window-scoping: v3 delivers every 'backend' envelope to every
+    // window. Once we know our own windowName (from the snapshot), drop
+    // envelopes sent to a different window.
+    if (msg.type !== 'snapshot' && sender && this.windowName && sender !== this.windowName) {
+      return
+    }
     switch (msg.type) {
       case 'event':
         this.applyEvent(msg)
@@ -187,6 +206,8 @@ export class UIStore {
   private applySnapshot(snap: SnapshotMessage) {
     const s = snap.state
     this.streamBuffer.clear()
+    this.finalized.clear()
+    if (snap.windowName) this.windowName = snap.windowName
     this.set({
       connected: true,
       needsWorkspace: !(s.workspace?.path),
@@ -231,6 +252,7 @@ export class UIStore {
         break
       case Ev.AgentMessage: {
         const msg = p as unknown as ChatMessage
+        this.finalized.add(msg.id)
         const messages = [...this.state.agent.messages]
         const idx = messages.findIndex((m) => m.id === msg.id)
         if (idx >= 0) messages[idx] = msg
@@ -292,15 +314,17 @@ export class UIStore {
       case Ev.AgentCompleted:
         // Finalize any messages still marked streaming — a RAF-buffered
         // token stream may have set streaming:true just before we here.
+        // Untouched messages keep their object identity so the memoized
+        // chat blocks skip this settle pass.
         this.setAgent({
           status: 'idle',
-          messages: this.state.agent.messages.map((m) => ({ ...m, streaming: false })),
+          messages: this.state.agent.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
         })
         break
       case Ev.AgentFailed:
         this.setAgent({
           status: 'error',
-          messages: this.state.agent.messages.map((m) => ({ ...m, streaming: false })),
+          messages: this.state.agent.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
         })
         this.pushNotification('error', (p?.message as string) ?? 'agent failed')
         break
@@ -334,6 +358,7 @@ export class UIStore {
         break
       }
       case Ev.AgentReset:
+        this.finalized.clear()
         this.set({
           agent: { status: 'idle', messages: [], toolCalls: [] },
           pendingApprovals: [],
@@ -395,6 +420,7 @@ export class UIStore {
   private applyStream(name: string, payload: unknown) {
     if (name === Stream.AgentThinking) {
       const { messageId, text } = payload as ThinkingPayload
+      if (this.finalized.has(messageId)) return // late flush after finalization
       const messages = [...this.state.agent.messages]
       const idx = messages.findIndex((m) => m.id === messageId)
       if (idx >= 0) {
@@ -416,6 +442,7 @@ export class UIStore {
     // 'generating' or re-mark a finalized message as streaming.
     if (this.state.agent.status === 'idle' || this.state.agent.status === 'error') return
     const { messageId, text } = payload as { messageId: string; text: string }
+    if (this.finalized.has(messageId)) return // late flush after finalization
     const messages = [...this.state.agent.messages]
     const idx = messages.findIndex((m) => m.id === messageId)
     if (idx >= 0) {

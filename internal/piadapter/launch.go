@@ -27,27 +27,35 @@ type SidecarSettings struct {
 }
 
 // ResolveBinary picks the sidecar binary: the bundled coconut-pi next to
-// our executable (packaged builds / repo build/sidecar), else "pi" from
-// PATH (development fallback).
+// our executable (packaged builds), the repo's build/sidecar payload
+// (dev apps — walked up from the executable, so .app bundles in any bin
+// directory work), else "pi" from PATH (development fallback).
 func ResolveBinary(selfPath string) string {
 	if selfPath != "" {
 		dir := filepath.Dir(selfPath)
-		candidates := []string{
-			filepath.Join(dir, "coconut-pi"),                  // packaged: next to app binary
-			filepath.Join(dir, "..", "sidecar", "coconut-pi"), // repo build/sidecar from build/bin
-			filepath.Join(dir, "..", "..", "build", "sidecar", "coconut-pi"),
+		if p := filepath.Join(dir, "coconut-pi"); fileIsRegular(p) {
+			return p // packaged: next to app binary
 		}
-		for _, p := range candidates {
-			if info, err := os.Stat(p); err == nil && !info.IsDir() {
-				abs, err := filepath.Abs(p)
-				if err == nil {
+		for i := 0; i < 6; i++ {
+			if p := filepath.Join(dir, "build", "sidecar", "coconut-pi"); fileIsRegular(p) {
+				if abs, err := filepath.Abs(p); err == nil {
 					return abs
 				}
 				return p
 			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
 		}
 	}
 	return "pi" // PATH fallback
+}
+
+func fileIsRegular(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
 }
 
 // BuildLaunchSpec assembles the sidecar invocation:

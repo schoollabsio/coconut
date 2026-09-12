@@ -26,21 +26,22 @@ Architecture (see PLAN.md for the full spec):
 
 ## Develop
 
-Requires Go ≥ 1.24, Node ≥ 20, Bun, and the wails CLI
-(`go install github.com/wailsapp/wails/v2/cmd/wails@latest`; ensure
-`~/go/bin` is on PATH).
+Requires Go ≥ 1.24, Node ≥ 20, Bun, and the wails **v3** CLI
+(`go install github.com/wailsapp/wails/v3/cmd/wails@beta`, which installs
+as `wails3`; ensure `~/go/bin` is on PATH). The v2 CLI (`wails`) does not
+understand a v3 go.mod.
 
 ```bash
 # 1. Token-free development against the scripted fake sidecar:
 go build -o build/bin/fakepi ./cmd/fakepi
 export COCONUT_PI_BINARY="$PWD/build/bin/fakepi"
 export COCONUT_PI_SCENARIO="$PWD/testdata/scenarios/todo-app.json"
-wails dev
+wails3 dev
 
 # 2. Against the real pi (uses your system `pi`; the app's isolated
 #    config means you enter an API key in the settings modal once):
 unset COCONUT_PI_BINARY COCONUT_PI_SCENARIO
-wails dev
+wails3 dev
 ```
 
 Useful env overrides: `COCONUT_CONFIG_DIR` (app config location),

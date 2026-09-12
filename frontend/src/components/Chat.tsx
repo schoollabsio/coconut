@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { ChatMessage } from '../protocol'
 import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import { useUIState } from '../store'
 import { Markdown } from './Markdown'
 import { FadingTail, StreamingText } from './StreamingText'
+
+/** Memoized markdown. The chat list re-renders on every token, but only
+ *  the streaming message's text actually changes — memo lets every other
+ *  block skip its full re-parse (previously every past message re-ran
+ *  ReactMarkdown per token: the main flicker/jank source). */
+const MemoMarkdown = memo(Markdown)
 
 type ThinkingGroup = {
   messages: ChatMessage[]
@@ -99,7 +105,7 @@ function groupMessages(messages: ChatMessage[]): GroupedMessage[] {
 }
 
 
-function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
+const ThinkingBlock = memo(function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: string; thinkingDone: boolean; thinkingMs?: number }) {
   const [expanded, setExpanded] = useState(false)
   const [showTopShadow, setShowTopShadow] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -168,10 +174,17 @@ function ThinkingBlock({ thinking, thinkingDone, thinkingMs }: { thinking: strin
       </div>
     </div>
   )
-}
+})
 
-/** ConsolidatedThinkingBlock renders multiple thinking blocks as a single collapsed entry. */
-function ConsolidatedThinkingBlock({ group }: { group: ThinkingGroup }) {
+/** ConsolidatedThinkingBlock renders multiple thinking blocks as a single collapsed entry.
+ *  Custom compare: `group` is rebuilt on every groupMessages pass, but its
+ *  message objects keep identity, so unchanged groups skip re-render. */
+const sameGroup = (a: ThinkingGroup, b: ThinkingGroup) =>
+  a.totalMs === b.totalMs &&
+  a.messages.length === b.messages.length &&
+  a.messages.every((m, i) => m === b.messages[i])
+
+const ConsolidatedThinkingBlock = memo(function ConsolidatedThinkingBlock({ group }: { group: ThinkingGroup }) {
   const [expanded, setExpanded] = useState(false)
   
   return (
@@ -194,30 +207,10 @@ function ConsolidatedThinkingBlock({ group }: { group: ThinkingGroup }) {
       )}
     </div>
   )
-}
-
-export function Chat({ client }: { client: BackendClient }) {
-  const messages = useUIState((s) => s.agent.messages)
-  const status = useUIState((s) => s.agent.status)
-  const busy = status !== 'idle' && status !== 'error'
-  // Group messages for consolidation
-  const groupedMessages = groupMessages(messages)
-  const lastMsg = messages[messages.length - 1]
-  
-  // Check if there's active thinking (streaming or not yet done)
-  const hasActiveThinking = groupedMessages.some(g => {
-    if (g.type === 'assistant') {
-      return g.message.thinking && !g.message.thinkingDone
-    }
-    if (g.type === 'orphaned_thinking') {
-      return g.group.messages.some(m => m.thinking && !m.thinkingDone)
-    }
-    return false
-  })
-  const thinkingActive = hasActiveThinking
+}, (prev, next) => sameGroup(prev.group, next.group))
 
 /** PreThinkingBlock renders orphaned thinking as a collapsed header. */
-function PreThinkingBlock({ totalMs, messages }: { totalMs: number; messages: ThinkingGroup['messages'] }) {
+const PreThinkingBlock = memo(function PreThinkingBlock({ totalMs, messages }: { totalMs: number; messages: ThinkingGroup['messages'] }) {
   const [expanded, setExpanded] = useState(false)
   return (
     <div className="mb-2">
@@ -239,10 +232,15 @@ function PreThinkingBlock({ totalMs, messages }: { totalMs: number; messages: Th
       )}
     </div>
   )
-}
+}, (prev, next) =>
+  prev.totalMs === next.totalMs &&
+  prev.messages.length === next.messages.length &&
+  prev.messages.every((m, i) => m === next.messages[i]))
 
-/** MessageContent renders an assistant message with optional thinking. */
-function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }: {
+/** MessageContent renders an assistant message with optional thinking.
+ *  Memoized on primitive props: a block whose message didn't change skips
+ *  rendering — including the full markdown re-parse of its text. */
+const MessageContent = memo(function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }: {
   thinking?: string
   thinkingDone?: boolean
   thinkingMs?: number
@@ -258,19 +256,49 @@ function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }:
           thinkingMs={thinkingMs}
         />
       )}
-      {text && (streaming ? <StreamingText text={text} /> : <Markdown text={text} />)}
+      {text && (streaming ? <StreamingText text={text} /> : <MemoMarkdown text={text} />)}
     </>
   )
-}
+})
+
+export function Chat({ client }: { client: BackendClient }) {
+  const messages = useUIState((s) => s.agent.messages)
+  const status = useUIState((s) => s.agent.status)
+  const busy = status !== 'idle' && status !== 'error'
+  // Group messages for consolidation
+  const groupedMessages = groupMessages(messages)
+  const lastMsg = messages[messages.length - 1]
+  
+  // Check if there's active thinking (streaming or not yet done)
+  const hasActiveThinking = groupedMessages.some(g => {
+    if (g.type === 'assistant') {
+      return g.message.thinking && !g.message.thinkingDone
+    }
+    if (g.type === 'orphaned_thinking') {
+      return g.group.messages.some(m => m.thinking && !m.thinkingDone)
+    }
+    return false
+  })
+  const thinkingActive = hasActiveThinking
 
   const chatRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState('')
 
-  // Stick to bottom as content streams in.
+  // Stick to bottom as content streams in — but ONLY while the user is
+  // already near the bottom. The previous version forced
+  // scrollTop=scrollHeight on every token update unconditionally, so the
+  // view fought the scroll position (and yanked it) on every update:
+  // that read as flicker while tokens were streaming in.
+  const atBottomRef = useRef(true)
+  const onScroll = () => {
+    const el = chatRef.current
+    if (!el) return
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+  }
   useEffect(() => {
     const el = chatRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
   }, [messages])
 
   const autoresize = () => {
@@ -284,6 +312,7 @@ function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }:
     const text = draft.trim()
     if (!text) return
     setDraft('')
+    atBottomRef.current = true // a new turn always snaps to the bottom
     requestAnimationFrame(autoresize)
     const resp = await client.command(Cmd.AgentStart, { prompt: text })
     if (!resp.ok) {
@@ -297,7 +326,7 @@ function MessageContent({ thinking, thinkingDone, thinkingMs, text, streaming }:
 
   return (
     <>
-      <div ref={chatRef} className="flex flex-col gap-7 text-base max-h-96 md:max-h-none md:flex-1 overflow-y-auto pr-2 pt-2">
+      <div ref={chatRef} onScroll={onScroll} className="flex flex-col gap-7 text-base max-h-96 md:max-h-none md:flex-1 overflow-y-auto pr-2 pt-2">
         {messages.length === 0 && (
           <div className="text-faint text-sm italic px-2 pt-4">No messages yet — ask the agent anything.</div>
         )}

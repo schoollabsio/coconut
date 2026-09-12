@@ -2,43 +2,45 @@ package main
 
 import (
 	"embed"
+	"io/fs"
+	"log"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist
-var assets embed.FS
+var distAssets embed.FS
 
 func main() {
-	app := NewApp()
-
-	err := wails.Run(&options.App{
-		Title:     "coconut",
-		Width:     1280,
-		Height:    800,
-		MinWidth:  800,
-		MinHeight: 500,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 16, G: 16, B: 18, A: 1}, // --bg #101012
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Mac: &mac.Options{
-			// VSCode/Zed look: no native titlebar; traffic lights float
-			// over the content, which extends to the window's top edge.
-			// The frontend header is the drag region (--wails-draggable).
-			TitleBar:   mac.TitleBarHidden(),
-			Appearance: mac.NSAppearanceNameDarkAqua,
-		},
-		Bind: []interface{}{
-			app,
-		},
-	})
+	// The embedded FS is rooted at the repo; serve the built frontend from
+	// its dist subdirectory (index.html at the fs root).
+	dist, err := fs.Sub(distAssets, "frontend/dist")
 	if err != nil {
-		println("Error:", err.Error())
+		log.Fatal("coconut: assets: ", err)
+	}
+
+	// App is the window manager: each window (main + siblings) gets its
+	// own engine, event channel, and dialog attachment. It is created
+	// before the wails app so it can be listed in Services.
+	app := NewApp(nil)
+
+	wailsApp := application.New(application.Options{
+		Name: "coconut",
+		Assets: application.AssetOptions{
+			Handler: application.BundledAssetFileServer(dist),
+		},
+		Services:   []application.Service{application.NewService(app)},
+		OnShutdown: app.shutdown,
+	})
+	app.Bind(wailsApp)
+
+	// VSCode/Zed look: no native titlebar; traffic lights float over the
+	// content, which extends to the window's top edge. The frontend header
+	// is the drag region (--wails-draggable).
+	win := wailsApp.Window.NewWithOptions(windowOptions("coconut", "main"))
+	app.attach(win, nil) // main window: restore the shared last agent
+
+	if err := wailsApp.Run(); err != nil {
+		log.Fatal("coconut: ", err)
 	}
 }

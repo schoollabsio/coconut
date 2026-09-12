@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>coconut v3 spike</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 13px/1.5 -apple-system, system-ui, sans-serif; margin: 0; background: #101014; color: #e8e8ee; }
+  header { display: flex; align-items: center; gap: 12px; padding: 36px 16px 10px; flex-wrap: wrap; }
+  header strong { font-size: 14px; }
+  #whoami, #qparam { color: #8ab4f8; font-family: ui-monospace, monospace; font-size: 12px; }
+  #buttons { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  button { background: #1d1d24; color: #e8e8ee; border: 1px solid #333; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  button:hover { background: #26262f; }
+  #log { margin: 0 16px 16px; padding: 10px; background: #0a0a0d; border: 1px solid #26262e; border-radius: 6px; height: 400px; overflow: auto; font: 11px/1.6 ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <strong>coconut → Wails v3 spike</strong>
+  <span id="whoami">window: …</span>
+  <span id="qparam">query: …</span>
+</header>
+<div id="buttons">
+  <button id="b-ping">Ping (who am I?)</button>
+  <button id="b-open2">Open 2nd window</button>
+  <button id="b-close">Close this window</button>
+  <button id="b-dir">Pick directory</button>
+  <button id="b-emit">Emit to caller only</button>
+  <button id="b-broadcast">Broadcast to all</button>
+  <button id="b-fs">Toggle fullscreen</button>
+</div>
+<pre id="log"></pre>
+<script type="module">
+// v3 frontend model (vs v2):
+//   - bindings are generated ES modules (wails3 generate bindings -b),
+//     importing the served runtime at /wails/runtime.js
+//   - events: import { Events } from "/wails/runtime.js"
+import * as wails from "/wails/runtime.js";
+import { App } from "./bindings/github.com/jschool/coconut/spike/wails3/index.js";
+
+const $ = (id) => document.getElementById(id);
+const log = (line) => { $("log").textContent += line + "\n"; $("log").scrollTop = 1e9; };
+
+const qp = new URLSearchParams(location.search);
+$("qparam").textContent = "query: " + (qp.get("window") || "(none)");
+
+// Note: v3 event callbacks receive a WailsEvent {name, data}, not the raw payload.
+wails.Events.On("backend", (ev) => log("EVENT  " + ev.name + "  " + JSON.stringify(ev.data)));
+
+async function call(name, ...args) {
+  log(`CALL   ${name}  ${JSON.stringify(args)}`);
+  try {
+    const r = await App[name](...args);
+    log(`RESULT ${JSON.stringify(r)}`);
+    if (name === "Ping" && r && r.ok) $("whoami").textContent = "window: " + r.data;
+  } catch (e) {
+    log(`ERROR  ${e}`);
+  }
+}
+
+$("b-ping").onclick = () => call("Ping");
+$("b-open2").onclick = () => call("OpenSecondWindow");
+$("b-close").onclick = () => call("CloseThisWindow");
+$("b-dir").onclick = () => call("PickDirectory");
+$("b-emit").onclick = () => call("EmitToCaller", "hello from window=" + (qp.get("window") || "main"));
+$("b-broadcast").onclick = () => call("Broadcast", "broadcast from " + (qp.get("window") || "main"));
+$("b-fs").onclick = () => call("ToggleFullscreen");
+
+log("loaded " + location.pathname + location.search);
+</script>
+</body>
+</html>

@@ -42,6 +42,10 @@ export interface SnapshotMessage {
   type: 'snapshot'
   seq: number
   state: SnapshotState
+  /** The calling window's name — the sender tag for 'backend' events.
+   *  v3 broadcasts custom events to every window; the store drops
+   *  envelopes whose sender is not this window. */
+  windowName?: string
 }
 
 export interface ErrorMessage {
@@ -70,6 +74,8 @@ export const Cmd = {
   SettingsGet: 'settings.get',
   SettingsSave: 'settings.save',
   SettingsValidate: 'settings.validate',
+  WindowNew: 'window.new',
+  Diagnostics: 'diagnostics.log',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -186,6 +192,14 @@ export interface ConfigProblem {
 export interface SettingsValidateResult {
   valid: boolean
   problems: ConfigProblem[]
+}
+
+/** window.new payload: open a sibling window booted to the given agent. */
+export interface WindowNewPayload {
+  workspace: string
+  agentSlug: string
+  agentName?: string
+  sessionFile?: string
 }
 
 /** settings.get response / settings.save request+response payload. */

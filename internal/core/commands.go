@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"log"
 	"os"
 
 	"github.com/jschool/coconut/internal/piadapter"
@@ -39,6 +40,14 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 		e.cmdSettingsValidate(cmd, respond)
 	case protocol.CmdSettingsSave:
 		e.cmdSettingsSave(cmd, respond)
+	case protocol.CmdDiagnostics:
+		var p struct {
+			Kind   string `json:"kind"`
+			Detail string `json:"detail"`
+		}
+		_ = json.Unmarshal(cmd.Payload, &p)
+		log.Printf("coconut-diagnostics: %s %s", p.Kind, p.Detail)
+		respond <- respondOK(cmd, map[string]any{})
 	default:
 		respond <- respondErr(cmd, "unknown_command", "unknown command: "+cmd.Name)
 	}
@@ -70,8 +79,33 @@ func (e *Engine) viaPi(cmd protocol.Command, respond chan []byte, name string, f
 // ---------------------------------------------------------------------------
 
 // cmdSessionRestore is the startup bootstrap: reopen the last workspace's
-// last agent (fast path — no picker at launch).
+// last agent (fast path — no picker at launch). A one-shot BootSpec
+// (new window opened for a specific agent) takes precedence: it opens
+// that agent in that workspace.
 func (e *Engine) cmdSessionRestore(cmd protocol.Command, respond chan []byte) {
+	if boot := e.bootSpec; boot != nil && boot.WorkspacePath != "" {
+		e.bootSpec = nil
+		e.state.workspacePath = boot.WorkspacePath
+		e.state.app.WorkspacePath = boot.WorkspacePath
+		ws := e.state.app.ws(boot.WorkspacePath)
+		ws.LastAgent = boot.AgentSlug
+		if boot.AgentName != "" {
+			ws.agent(boot.AgentSlug).Name = boot.AgentName
+		}
+		_ = saveState(e.cfg.ConfigDir, e.state.app)
+		e.startSidecarLocked(boot.AgentSlug, boot.SessionFile, false, func(err error) {
+			if err != nil {
+				respond <- respondErr(cmd, "pi_start_failed", err.Error())
+				return
+			}
+			respond <- respondOK(cmd, map[string]any{
+				"needsWorkspace": false,
+				"agentName":      e.state.agentName,
+				"agentSlug":      e.state.agentSlug,
+			})
+		})
+		return
+	}
 	if e.state.workspacePath == "" {
 		respond <- respondOK(cmd, map[string]any{"needsWorkspace": true})
 		return
