@@ -3,6 +3,9 @@ bin/
 /frontend/dist
 /coconut
 
+# Taskfile local build cache
+.task/
+
 # Pi sidecar artifacts
 /build/sidecar
 # Local agent sessions/transcripts (per-workspace state)

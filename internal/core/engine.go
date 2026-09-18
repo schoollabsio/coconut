@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jschool/coconut/internal/piadapter"
+	"github.com/jschool/coconut/internal/pilogin"
 	"github.com/jschool/coconut/internal/protocol"
 )
 
@@ -61,6 +62,19 @@ type Engine struct {
 	contCounter int64
 	conts       map[int64]contEntry
 
+	// login helper (auth flows; spawned on demand, shares the sidecar's
+	// agent dir for auth.json / models.json)
+	loginClient *pilogin.Client
+	loginProc   *os.Process
+
+	// in-flight login (at most one)
+	activeLoginID       string
+	activeLoginProvider string
+
+	// async helper command continuations
+	helperContCounter int64
+	helperConts       map[int64]func(resp pilogin.Response, err error)
+
 	// stream coalescing (PLAN.md §10.1)
 	pendingStreams map[string]any
 	flushDue       bool
@@ -91,6 +105,14 @@ type piRespInput struct {
 	err  error
 }
 
+type loginEventInput struct{ ev pilogin.Event }
+type loginGoneInput struct{ err error }
+type loginRespInput struct {
+	id   int64
+	resp pilogin.Response
+	err  error
+}
+
 type flushInput struct{}
 type shutdownInput struct{}
 type windowStateInput struct{ fullscreen bool }
@@ -100,6 +122,9 @@ func (snapshotInput) coreInput() {}
 func (piEventInput) coreInput()  {}
 func (piGoneInput) coreInput()   {}
 func (piRespInput) coreInput()   {}
+func (loginEventInput) coreInput() {}
+func (loginGoneInput) coreInput()  {}
+func (loginRespInput) coreInput()  {}
 func (flushInput) coreInput()    {}
 func (shutdownInput) coreInput() {}
 func (windowStateInput) coreInput() {}
@@ -127,6 +152,7 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 		done:           make(chan struct{}),
 		state:          newDomainState(),
 		conts:          map[int64]contEntry{},
+		helperConts:    map[int64]func(resp pilogin.Response, err error){},
 		pendingStreams: map[string]any{},
 	}
 	e.state.settings, e.state.settingsRaw = loadSettingsYAML(cfg.ConfigDir)
@@ -150,11 +176,13 @@ func (e *Engine) Run(ctx context.Context) {
 		case in := <-e.inbox:
 			if _, ok := in.(shutdownInput); ok {
 				e.stopSidecarLocked()
+				e.stopLoginHelperLocked()
 				return
 			}
 			e.handle(in)
 		case <-ctx.Done():
 			e.stopSidecarLocked()
+			e.stopLoginHelperLocked()
 			return
 		}
 	}
@@ -224,6 +252,15 @@ func (e *Engine) handle(in input) {
 		if entry, ok := e.conts[v.id]; ok {
 			delete(e.conts, v.id)
 			entry.fn(v.resp, v.err)
+		}
+	case loginEventInput:
+		e.handleLoginHelperEvent(v.ev)
+	case loginGoneInput:
+		e.onLoginHelperGone(v.err)
+	case loginRespInput:
+		if fn, ok := e.helperConts[v.id]; ok {
+			delete(e.helperConts, v.id)
+			fn(v.resp, v.err)
 		}
 	case flushInput:
 		e.flushStreamsLocked()

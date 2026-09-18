@@ -243,11 +243,19 @@ func (s *Settings) Validate(env func(string) (string, bool)) []protocol.ConfigPr
 						}
 					}
 					if !found {
-						prob("warning", "provider %q: no API key configured — set apiKey or export %s", s.Provider, names[len(names)-1])
+						prob("warning", "provider %q: no credential configured — sign in via Settings → Provider, or export %s", s.Provider, names[len(names)-1])
 					}
 				}
 			}
 		}
+	}
+
+	// Deprecation: a top-level apiKey for a BUILT-IN provider should live in
+	// pi's credential store (auth.json), not this file. It still works (env
+	// injection), and settings.save migrates it — this warning explains the
+	// change. Custom providers keep their key in the providers: entry.
+	if s.APIKey != "" && s.Provider != "" && isKnownProvider(s.Provider) {
+		prob("warning", "apiKey for built-in provider %q is deprecated — the key will be moved to the credential store (auth.json); you can then remove apiKey: from this file", s.Provider)
 	}
 	return out
 }
@@ -287,9 +295,11 @@ provider: anthropic
 # Model pattern (optional): bare id, provider/model, or provider/model:thinking.
 # model: claude-sonnet-4-5
 
-# API key for "provider". Stored in plaintext in this file (chmod 600).
-# Built-in providers can instead read their usual env var (e.g.
+# DEPRECATED for built-in providers: sign in via Settings → Provider instead
+# (credentials are stored in pi's credential store, auth.json — not here).
+# Built-in providers can also read their usual env var (e.g.
 # ANTHROPIC_API_KEY), which the sidecar inherits from your shell.
+# Custom providers defined under providers: keep using their apiKey: entry.
 apiKey: ""
 
 # Custom endpoints and headers. Entries are written to pi's models.json;

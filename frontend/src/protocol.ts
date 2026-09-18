@@ -76,6 +76,15 @@ export const Cmd = {
   SettingsValidate: 'settings.validate',
   WindowNew: 'window.new',
   Diagnostics: 'diagnostics.log',
+
+  // Auth (provider credentials via the coconut-login helper)
+  AuthStatus: 'auth.status',
+  AuthLogin: 'auth.login',
+  AuthLoginPrompt: 'auth.login.prompt',
+  AuthLoginCancel: 'auth.login.cancel',
+  AuthLogout: 'auth.logout',
+  AuthSetApiKey: 'auth.set_api_key',
+  AuthModels: 'auth.models',
 } as const
 
 // ---------------------------------------------------------------------------
@@ -101,6 +110,14 @@ export const Ev = {
   SettingsChanged: 'settings.changed',
   Notification: 'notification.created',
   AgentThinkingCompleted: 'agent.thinking.completed',
+
+  // Auth login flow (all carry a loginId)
+  AuthLoginStarted: 'auth.login.started',
+  AuthLoginStep: 'auth.login.step',
+  AuthLoginPrompt: 'auth.login.prompt',
+  AuthLoginCompleted: 'auth.login.completed',
+  AuthLoginCancelled: 'auth.login.cancelled',
+  AuthLoginFailed: 'auth.login.failed',
 } as const
 
 export const Stream = {
@@ -192,6 +209,114 @@ export interface ConfigProblem {
 export interface SettingsValidateResult {
   valid: boolean
   problems: ConfigProblem[]
+}
+
+// ---------------------------------------------------------------------------
+// Auth (login helper) payloads
+// ---------------------------------------------------------------------------
+
+export type AuthType = 'oauth' | 'api_key'
+
+export interface AuthLoginStartPayload {
+  provider: string
+  authType: AuthType
+}
+
+/** Answers a login prompt. Cancel=true dismisses the step. */
+export interface AuthLoginPromptPayload {
+  promptId: string
+  value?: string
+  cancel?: boolean
+}
+
+export interface AuthLoginCancelPayload {
+  loginId: string
+}
+
+export interface AuthProviderPayload {
+  provider: string
+}
+
+export interface AuthSetApiKeyPayload {
+  provider: string
+  key: string
+}
+
+export interface AuthModelsPayload {
+  provider?: string
+}
+
+/** One provider in auth.status results. */
+export interface AuthProviderStatus {
+  id: string
+  name: string
+  oauth: boolean
+  apiKey: boolean
+  configured: boolean
+  source?: string
+  type?: 'oauth' | 'api_key'
+}
+
+export interface CredentialInfo {
+  providerId: string
+  type: 'oauth' | 'api_key'
+}
+
+export interface AuthStatusResult {
+  providers: AuthProviderStatus[]
+  credentials: CredentialInfo[]
+  activeProvider?: string
+}
+
+export interface AuthModel {
+  id: string
+  name: string
+  provider: string
+  contextWindow?: number
+  reasoning?: boolean
+}
+
+// pi AuthEvent / AuthPrompt shapes (forwarded by the helper)
+export interface AuthEvent {
+  type: 'info' | 'auth_url' | 'device_code' | 'progress'
+  message?: string
+  url?: string
+  /** pi's device-code flows carry the sign-in page here (e.g. github.com/login/device). */
+  verificationUri?: string
+  userCode?: string
+  verifier?: string
+  interval?: number
+  expiresInSeconds?: number
+}
+
+export interface AuthPrompt {
+  type: 'text' | 'secret' | 'select' | 'manual_code'
+  /** The question (pi uses `message`; `label` kept as fallback). */
+  message?: string
+  label?: string
+  placeholder?: string
+  options?: { id: string; label: string }[]
+}
+
+export interface AuthLoginStepPayload {
+  loginId: string
+  event: AuthEvent
+}
+
+export interface AuthLoginPromptEvent {
+  loginId: string
+  promptId: string
+  prompt: AuthPrompt
+}
+
+export interface AuthLoginDonePayload {
+  loginId: string
+  provider: string
+}
+
+export interface AuthLoginErrorPayload {
+  loginId: string
+  message: string
 }
 
 /** window.new payload: open a sibling window booted to the given agent. */

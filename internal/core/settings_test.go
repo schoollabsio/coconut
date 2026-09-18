@@ -57,8 +57,20 @@ func containsMsg(msgs []string, sub string) bool {
 
 func TestValidateValidMinimal(t *testing.T) {
 	_, msgs := problemsFor(t, "provider: anthropic\napiKey: sk-ant-test\nbashWhitelist:\n  - ls\n", noEnv)
-	if len(msgs) != 0 {
-		t.Fatalf("expected no problems, got %v", msgs)
+	// The only expected finding is the apiKey deprecation warning
+	// (built-in provider keys now belong in the credential store).
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly one problem, got %v", msgs)
+	}
+	if !strings.HasPrefix(msgs[0], "warning:") || !containsMsg(msgs, "deprecated") {
+		t.Fatalf("expected the deprecation warning, got %v", msgs)
+	}
+
+	// No top-level apiKey → a clean config (no credential, no env) warns
+	// about the missing credential but has no errors.
+	_, msgs = problemsFor(t, "provider: anthropic\nbashWhitelist:\n  - ls\n", noEnv)
+	if hasSeverity(msgs, "error") {
+		t.Fatalf("expected no errors, got %v", msgs)
 	}
 }
 

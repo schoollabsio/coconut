@@ -316,3 +316,73 @@ describe('group collapse state', () => {
     expect(s.state.expandedGroups.has('read-c1')).toBe(true) // untouched
   })
 })
+
+describe('UIStore auth login flow', () => {
+  it('tracks the flow through started → step → prompt → completed', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AuthLoginStarted, { loginId: 'L1', provider: 'github-copilot', authType: 'oauth' }))
+    expect(s.state.auth.login).not.toBeNull()
+    expect(s.state.auth.login!.provider).toBe('github-copilot')
+    expect(s.state.auth.login!.result).toBeNull()
+
+    s.applyBackendMessage(ev(3, Ev.AuthLoginStep, { loginId: 'L1', event: { type: 'device_code', message: 'Enter code', userCode: 'ABCD-1234', url: 'https://github.com/login/device' } }))
+    expect(s.state.auth.login!.steps).toHaveLength(1)
+    expect(s.state.auth.login!.steps[0].userCode).toBe('ABCD-1234')
+
+    s.applyBackendMessage(ev(4, Ev.AuthLoginPrompt, { loginId: 'L1', promptId: 'P1', prompt: { type: 'manual_code', label: 'Code' } }))
+    expect(s.state.auth.login!.prompt).toEqual({ promptId: 'P1', prompt: { type: 'manual_code', label: 'Code' } })
+
+    s.applyBackendMessage(ev(5, Ev.AuthLoginCompleted, { loginId: 'L1', provider: 'github-copilot' }))
+    expect(s.state.auth.login!.result).toBe('completed')
+    expect(s.state.auth.login!.prompt).toBeNull()
+  })
+
+  it('records cancel and failure outcomes with messages', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AuthLoginStarted, { loginId: 'L2', provider: 'openai', authType: 'oauth' }))
+    s.applyBackendMessage(ev(3, Ev.AuthLoginCancelled, { loginId: 'L2', message: 'user cancelled' }))
+    expect(s.state.auth.login!.result).toBe('cancelled')
+    expect(s.state.auth.login!.message).toBe('user cancelled')
+
+    s.beginAuthLogin({ loginId: 'L3', provider: 'xai', authType: 'oauth' })
+    s.applyBackendMessage(ev(4, Ev.AuthLoginFailed, { loginId: 'L3', message: 'boom' }))
+    expect(s.state.auth.login!.result).toBe('failed')
+    expect(s.state.auth.login!.message).toBe('boom')
+  })
+
+  it('ignores flow events for a different loginId', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.beginAuthLogin({ loginId: 'L1', provider: 'a', authType: 'oauth' })
+    s.applyBackendMessage(ev(2, Ev.AuthLoginStep, { loginId: 'OTHER', event: { type: 'info', message: 'nope' } }))
+    expect(s.state.auth.login!.steps).toHaveLength(0)
+    s.applyBackendMessage(ev(3, Ev.AuthLoginCompleted, { loginId: 'OTHER' }))
+    expect(s.state.auth.login!.result).toBeNull() // still in flight
+  })
+
+  it('keeps an in-flight login across a status refresh but drops a finished one', () => {
+    const s = new UIStore()
+    const status = { providers: [{ id: 'a', name: 'A', oauth: true, apiKey: false, configured: false }], credentials: [] }
+    s.setAuthStatus(status)
+    s.beginAuthLogin({ loginId: 'L1', provider: 'a', authType: 'oauth' })
+    s.setAuthStatus(status) // in-flight → preserved
+    expect(s.state.auth.login).not.toBeNull()
+
+    s.applyBackendMessage(snap(1)) // reset
+    s.beginAuthLogin({ loginId: 'L2', provider: 'a', authType: 'oauth' })
+    s.applyBackendMessage(ev(2, Ev.AuthLoginCompleted, { loginId: 'L2' }))
+    s.setAuthStatus(status) // finished → dropped
+    expect(s.state.auth.login).toBeNull()
+  })
+
+  it('stores models keyed by provider', () => {
+    const s = new UIStore()
+    s.setAuthModels([{ id: 'm1', name: 'M1', provider: 'a' }], 'a')
+    expect(s.state.auth.modelsFor).toBe('a')
+    s.setAuthModels([], 'b')
+    expect(s.state.auth.modelsFor).toBe('b')
+    expect(s.state.auth.models).toHaveLength(0)
+  })
+})

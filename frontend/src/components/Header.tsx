@@ -3,6 +3,7 @@ import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import type { AgentSummary } from '../protocol'
 import { store, useUIState } from '../store'
+import { useAuthStatus } from '../useAuthStatus'
 
 /** Header row: agent name + agent/session controls, workspace path (click
  *  to change), settings gear. */
@@ -10,6 +11,7 @@ export function Header({ client }: { client: BackendClient }) {
   const agentName = useUIState((s) => s.agentName)
   const workspace = useUIState((s) => s.workspace)
   const isFullscreen = useUIState((s) => s.isFullscreen)
+  const authStatus = useAuthStatus(client)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const fitName = () => {
@@ -104,11 +106,13 @@ export function Header({ client }: { client: BackendClient }) {
           {workspace ? workspace.path : 'choose workspace…'}
         </span>
       </button>
-      <button
-        aria-label="Open settings"
-        onClick={() => store.setSettingsOpen(true)}
-        className="no-drag ml-auto shrink-0 p-1.5 rounded-lg text-dim hover:text-ink hover:bg-surface2 transition-colors"
-      >
+      <div className="ml-auto flex items-center gap-1">
+        <AuthProviderChip status={authStatus} onClick={() => store.setSettingsOpen(true)} />
+        <button
+          aria-label="Open settings"
+          onClick={() => store.setSettingsOpen(true)}
+          className="no-drag shrink-0 p-1.5 rounded-lg text-dim hover:text-ink hover:bg-surface2 transition-colors"
+        >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
           <path
             strokeLinecap="round"
@@ -118,6 +122,37 @@ export function Header({ client }: { client: BackendClient }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
+      </div>
     </div>
+  )
+}
+
+/** Compact credential indicator: green dot when the active provider has
+ *  credentials, dim otherwise. Click opens Settings → Provider. */
+function AuthProviderChip({
+  status,
+  onClick,
+}: {
+  status: ReturnType<typeof useAuthStatus>
+  onClick: () => void
+}) {
+  const active = status?.providers?.find((p) => p.id === status.activeProvider)
+  const configured = !!active?.configured
+  const label = active
+    ? `${active.name || active.id}${configured ? '' : ' — not signed in'}`
+    : 'no provider credentials'
+  return (
+    <button
+      onClick={onClick}
+      title={`${label} — click to manage in Settings → Provider`}
+      className="no-drag flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface2 transition-colors"
+    >
+      <span
+        className={`w-1.5 h-1.5 rounded-full shrink-0 ${configured ? 'bg-accent' : 'bg-faint'}`}
+      />
+      <span className={`font-mono text-[10px] truncate max-w-[16vw] ${configured ? 'text-mute' : 'text-faint'}`}>
+        {active ? active.name || active.id : 'no provider'}
+      </span>
+    </button>
   )
 }

@@ -11,6 +11,13 @@ import type {
   AgentStatus,
   ApprovalRequest,
   AgentSummary,
+  AuthEvent,
+  AuthLoginPromptEvent,
+  AuthLoginStartPayload,
+  AuthLoginStepPayload,
+  AuthModel,
+  AuthPrompt,
+  AuthStatusResult,
   BackendEvent,
   BackendMessage,
   ChatMessage,
@@ -31,6 +38,29 @@ export interface Notification {
   id: number
   level: 'info' | 'warning' | 'error'
   message: string
+}
+
+/** One in-flight login flow (auth.login.* events). */
+export interface AuthLoginFlow {
+  loginId: string
+  provider: string
+  /** notify events in arrival order (info / auth_url / device_code / progress). */
+  steps: AuthEvent[]
+  /** The prompt currently awaiting an answer, if any. */
+  prompt: { promptId: string; prompt: AuthPrompt } | null
+  /** Terminal state once reached; null while in flight. */
+  result: 'completed' | 'cancelled' | 'failed' | null
+  message?: string
+}
+
+export interface AuthState {
+  /** auth.status result (providers + credential status). */
+  status: AuthStatusResult | null
+  /** auth.models result for `modelsFor`. */
+  models: AuthModel[]
+  modelsFor: string
+  /** Active login flow (at most one). */
+  login: AuthLoginFlow | null
 }
 
 export interface UIState {
@@ -57,6 +87,9 @@ export interface UIState {
   /** Agent/session picker modal. */
   agentPickerOpen: boolean
   agentList: AgentSummary[]
+  /** Provider auth (settings → Provider panel). Driven by auth.* commands
+   *  + auth.login.* events; not part of the backend snapshot. */
+  auth: AuthState
   notifications: Notification[]
   /** Expanded group keys for the tool call log (UI-only, not synced to backend). Groups default to collapsed. */
   expandedGroups: Set<string>
@@ -78,6 +111,12 @@ const initialState: UIState = {
   settingsOpen: false,
   agentPickerOpen: false,
   agentList: [],
+  auth: {
+    status: null,
+    models: [],
+    modelsFor: '',
+    login: null,
+  },
   notifications: [],
   expandedGroups: new Set<string>(),
 }
@@ -148,6 +187,37 @@ export class UIStore {
   }
   focusApproval(id: string | null) {
     this.set({ focusedApprovalId: id })
+  }
+
+  // ------------------------------------------------------------------
+  // auth (settings → Provider panel)
+  // ------------------------------------------------------------------
+
+  setAuthStatus(status: AuthStatusResult | null) {
+    const a = this.state.auth
+    // A new status snapshot supersedes any stale login flow for another
+    // provider; an in-flight flow for the SAME provider stays live.
+    const login = a.login && a.login.result === null ? a.login : null
+    this.set({ auth: { status, models: a.models, modelsFor: a.modelsFor, login } })
+  }
+
+  setAuthModels(models: AuthModel[], provider: string) {
+    this.set({ auth: { ...this.state.auth, models, modelsFor: provider } })
+  }
+
+  /** Begin tracking a login flow (from the auth.login response). */
+  beginAuthLogin(payload: AuthLoginStartPayload & { loginId: string }) {
+    this.set({
+      auth: {
+        ...this.state.auth,
+        login: { loginId: payload.loginId, provider: payload.provider, steps: [], prompt: null, result: null },
+      },
+    })
+  }
+
+  /** Drop a finished flow (user closed the panel after the outcome). */
+  clearAuthLogin() {
+    this.set({ auth: { ...this.state.auth, login: null } })
   }
   dismissNotification(id: number) {
     this.set({ notifications: this.state.notifications.filter((n) => n.id !== id) })
@@ -337,6 +407,46 @@ export class UIStore {
       case Ev.SettingsChanged:
         this.set({ settingsYaml: (p as unknown as SettingsYAML).yaml })
         break
+      case Ev.AuthLoginStarted:
+        this.beginAuthLogin(p as unknown as AuthLoginStartPayload & { loginId: string })
+        break
+      case Ev.AuthLoginStep: {
+        const sp = p as unknown as AuthLoginStepPayload
+        const flow = this.state.auth.login
+        if (flow && flow.loginId === sp.loginId) {
+          this.set({ auth: { ...this.state.auth, login: { ...flow, steps: [...flow.steps, sp.event] } } })
+        }
+        break
+      }
+      case Ev.AuthLoginPrompt: {
+        const pp = p as unknown as AuthLoginPromptEvent
+        const flow = this.state.auth.login
+        if (flow && flow.loginId === pp.loginId) {
+          this.set({ auth: { ...this.state.auth, login: { ...flow, prompt: { promptId: pp.promptId, prompt: pp.prompt } } } })
+        }
+        break
+      }
+      case Ev.AuthLoginCompleted: {
+        const flow = this.state.auth.login
+        if (flow && flow.loginId === p?.loginId) {
+          this.set({ auth: { ...this.state.auth, login: { ...flow, prompt: null, result: 'completed' } } })
+        }
+        break
+      }
+      case Ev.AuthLoginCancelled: {
+        const flow = this.state.auth.login
+        if (flow && flow.loginId === p?.loginId) {
+          this.set({ auth: { ...this.state.auth, login: { ...flow, prompt: null, result: 'cancelled', message: p?.message as string } } })
+        }
+        break
+      }
+      case Ev.AuthLoginFailed: {
+        const flow = this.state.auth.login
+        if (flow && flow.loginId === p?.loginId) {
+          this.set({ auth: { ...this.state.auth, login: { ...flow, prompt: null, result: 'failed', message: p?.message as string } } })
+        }
+        break
+      }
       case Ev.WorkspaceChanged: {
         const wc = p as unknown as WorkspaceChangedPayload
         this.set({ workspace: wc.workspace, needsWorkspace: false, agentPickerOpen: false })

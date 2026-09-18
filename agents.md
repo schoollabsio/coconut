@@ -22,7 +22,8 @@ Architecture:
   owns domain state, normalizes pi events, sequences everything with a global
   `seq`, serves snapshots, and bridges approvals. Single-writer actor.
 - **React frontend** (`frontend/`) — event-driven UI: tool log | chat |
-  content panel, resizable/collapsible, settings modal.
+  content panel, resizable/collapsible, and a sidebar settings modal
+  (structured **Provider** panel + raw YAML **Advanced** pane).
 
 Read `PLAN.md` (the full technical spec) and `README.md` first.
 
@@ -56,6 +57,27 @@ makes dropped messages self-healing.
 The frontend talks only to Go. Go owns the pi process lifecycle and never
 exposes pi events raw.
 
+### 6. The login helper is the one non-Go backend process
+Provider auth (OAuth sign-in, API keys, credential status) is driven by a
+small TypeScript helper (`pi-login/helper.ts`, compiled to `coconut-login`
+next to the sidecar) that imports pi's public `ModelRuntime` SDK and speaks
+JSONL over stdio to the Go actor. This is a deliberate exception to
+"everything in Go", decided because:
+
+- pi's OAuth adapters (github-copilot, anthropic, openai-codex, openrouter,
+  xai, radius, …) are TypeScript maintained upstream in pi-ai — provider
+  endpoints, token shapes and refresh logic change with pi releases. A Go
+  port would own a copy of a moving target with no upstream to track.
+- `ModelRuntime.login()` already persists credentials to `auth.json`
+  (0600, file-locked) and auto-refreshes tokens; the helper is only a thin
+  transport shim over its `prompt()`/`notify()` interaction callbacks.
+- The alternatives were worse: pi's RPC protocol has no headless login
+  command (`/login` is TUI-only, `pi auth check` is inspect-only), the
+  extension API cannot trigger *built-in* provider logins, and PTY-driving
+  the interactive TUI means parsing ANSI.
+- If pi ever ships headless login in its RPC protocol, the helper collapses
+  to a few lines of command plumbing and can be dropped.
+
 ---
 
 ## Layout
@@ -70,10 +92,13 @@ exposes pi events raw.
 │   ├── src/
 │   │   ├── backend.ts         # BackendClient: Wails ↔ protocol bridge
 │   │   ├── protocol.ts        # Mirror of internal/protocol (keep in sync)
-│   │   ├── store.ts           # UIStore (single client-side state store)
+│   │   ├── store.ts           # UIStore (single client-side state store; auth slice)
 │   │   ├── store.test.ts      # Vitest tests for the store
 │   │   ├── App.tsx            # Orchestrator: connect → snapshot → live events
-│   │   ├── components/        # Chat, ToolLog, ContentPanel, Header, SettingsModal
+│   │   ├── useAuthStatus.ts   # header chip: keep provider credential status fresh
+│   │   ├── yamlPatch.ts       # pure settings.yaml provider/model rewrite (tested)
+│   │   ├── components/        # Chat, ToolLog, ContentPanel, Header,
+│   │   │                      # SettingsModal, ProviderPanel, AdvancedPanel
 │   │   └── index.css          # Tailwind import
 │   └── dist/                  # Embedded via go:embed (built by `bun run build`)
 ├── internal/
@@ -83,13 +108,19 @@ exposes pi events raw.
 │   │   ├── normalize.go       # pi event normalization (pi → domain)
 │   │   ├── state.go           # domainState (actor-owned, no locks)
 │   │   ├── sidecar.go         # Sidecar lifecycle, launch spec, session restore
+│   │   ├── auth.go            # Login-helper lifecycle + auth command handlers
 │   │   ├── settings.go        # settings.yaml parsing, validation, models.json generation
 │   │   ├── diff.go            # applyEdits, buildUnifiedDiff
-│   │   └── *_test.go          # Integration tests against fakepi
+│   │   └── *_test.go          # Integration tests against fakepi (+ opt-in real-helper tests)
 │   ├── piadapter/
 │   │   └── piadapter.go        # JSONL RPC client + sidecar process lifecycle
+│   ├── pilogin/
+│   │   ├── pilogin.go          # coconut-login helper client (JSONL, type-routed)
+│   │   └── pilogin_test.go     # Unit tests with a scripted fake helper
 │   └── protocol/
 │       └── protocol.go         # Envelope types shared Go ↔ frontend
+├── pi-login/
+│   └── helper.ts               # coconut-login source (TypeScript; compiled at build time)
 ├── pi-extension/
 │   └── coconut.ts              # Registered pi extension: approve-gated tools
 ├── cmd/fakepi/                 # Scripted pi stand-in for testing/dev
@@ -209,6 +240,13 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 | `settings.get` | `{}` | Get current settings.yaml text |
 | `settings.validate` | `{yaml}` | Dry-run validate YAML |
 | `settings.save` | `{yaml}` | Validate + persist + restart sidecar |
+| `auth.status` | `{}` | Providers + auth capabilities + credential status (no secrets) |
+| `auth.login` | `{provider, authType}` | Start a login (OAuth or API-key); responds immediately with `loginId`, progress via `auth.login.*` events |
+| `auth.login.prompt` | `{promptId, value?, cancel?}` | Answer a pending login prompt |
+| `auth.login.cancel` | `{loginId?}` | Abort the in-flight login |
+| `auth.logout` | `{provider}` | Remove a provider credential (restarts sidecar) |
+| `auth.set_api_key` | `{provider, key}` | Store an API key in auth.json (restarts sidecar) |
+| `auth.models` | `{provider?}` | Models usable under current credentials |
 
 ### Events (backend → frontend)
 | Event | Stream? | Description |
@@ -229,6 +267,12 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 | `content.updated` | No | show_content document promoted to content panel |
 | `settings.changed` | No | Settings updated |
 | `notification.created` | No | Show a notification |
+| `auth.login.started` | No | Login flow started (`{loginId, provider, authType}`) |
+| `auth.login.step` | No | A login step: helper notify event (`{loginId, event}` — info/auth_url/device_code/progress) |
+| `auth.login.prompt` | No | Interactive prompt to answer (`{loginId, promptId, prompt}` — text/secret/select/manual_code) |
+| `auth.login.completed` | No | Login finished successfully |
+| `auth.login.cancelled` | No | Login cancelled by user |
+| `auth.login.failed` | No | Login failed (`{loginId, message}`) |
 
 ### Streams
 | Stream | Payload | Notes |
@@ -257,7 +301,8 @@ safe from any goroutine.
 Key methods:
 - `Run(ctx)` — the actor loop
 - `handle(in)` — dispatches `cmdInput`, `snapshotInput`, `piEventInput`,
-  `piRespInput`, `flushInput`, `shutdownInput`
+  `piRespInput`, `loginEventInput`, `loginGoneInput`, `loginRespInput`,
+  `flushInput`, `shutdownInput`
 - `emitEvent(name, payload, correlationID)` — flushes pending streams first,
   assigns next `seq`, emits via `cfg.Emit`
 - `emitStream(name, payload)` — coalesces (latest-wins per name), schedules
@@ -289,6 +334,45 @@ its contents never enter the model transcript. Errors become notifications.
   `agent.failed`, then single automatic restart with session restore.
 - `buildLaunchSpec` — assembles the pi command line; checks
   `COCONUT_PI_BINARY` for dev/fakepi.
+
+### Login helper (`pi-login/helper.ts` → `coconut-login`, `internal/core/auth.go`, `internal/pilogin/`)
+Provider credentials are managed by a second helper process, the
+**coconut-login** driver (design rationale: principle #6 above):
+
+- **Source** `pi-login/helper.ts` — a ~250-line JSONL-over-stdio shim over
+  pi's `ModelRuntime` SDK (`login` / `setRuntimeApiKey` / `logout` /
+  `checkAuth` / `listCredentials` / `getAvailable`). Stdout carries
+  protocol lines only; diagnostics go to stderr.
+- **Client** `internal/pilogin/` — process lifecycle + command/response
+  correlation. Unlike pi's RPC (a `type:"response"` envelope), helper
+  responses carry their own result type, so routing is **by type name**:
+  `done`/`cancelled`/`error`/`ack`/`status_result`/`models_result` resolve
+  a pending request by `id`; `ready`/`notify`/`prompt` are events.
+- **Engine glue** `internal/core/auth.go` — spawns the helper on demand
+  (shared `agent/` dir with the sidecar, so `auth.json` is the same file),
+  pumps events into the actor, and implements the `auth.*` command
+  handlers. `auth.login` responds immediately with the `loginId` (= the
+  command id); progress arrives as `auth.login.*` events. After a
+  completed login / `set_api_key` / `logout`, the sidecar restarts (if
+  up) so it picks up the new credential.
+- **Secrets** travel frontend → helper only; Go relays without logging.
+  Step events carry metadata (URLs, codes), never secret values.
+- **Build** `scripts/build-sidecar.sh` compiles it next to the sidecar
+  (`build/sidecar/coconut-login`): the entry is copied **inside the pi
+  package** while bundling (self-reference import resolution), compiled
+  with `bun build --compile`, temp entry removed. Same bun-entry
+  requirement as the sidecar (OAuth flow loaders must be registered).
+- **Resolution** `pilogin.ResolveLoginHelper`: `COCONUT_LOGIN_HELPER`
+  override → next to the app binary (packaged) → `build/sidecar/`
+  (dev) → PATH.
+- **Tests**: `internal/pilogin/pilogin_test.go` (scripted fake helper
+  over pipes) and opt-in real-helper tests in
+  `internal/core/auth_integration_test.go` (set
+  `COCONUT_LOGIN_HELPER` + `COCONUT_TEST_AGENT_DIR`).
+- **Migration**: a top-level `settings.yaml` `apiKey` for a built-in
+  provider is deprecated — `settings.save` best-effort copies it into
+  `auth.json` (notified), and validation warns. Custom providers keep
+  their key in their `providers:` entry (models.json).
 
 ### Agent + session storage (`internal/core/slug.go`, `agents.go`)
 The top-left name is a persistent, workspace-scoped AGENT identity; each
@@ -354,6 +438,9 @@ Framework-free store with a React binding via `useSyncExternalStore`.
 - `applyBackendMessage(msg)` — dispatches to `applySnapshot`, `applyEvent`,
   or `bufferStream`.
 - `applyEvent` — seq-gap detection → `resync()`; otherwise applies to state.
+  Also handles the six `auth.login.*` events into the `auth` slice
+  (status / models / in-flight login flow; all terminal events are
+  guarded by `loginId`).
 - `bufferStream` / `applyStream` — buffers streams in a `Map`, flushes via
   `requestAnimationFrame`, applies cumulative payloads.
 - Does NOT own domain truth; derives UI state from backend messages.
@@ -375,8 +462,20 @@ effects. Cleanup must fully undo setup; setup must be safe to run twice.
 - **ToolLog.tsx** — tool call timeline (started/completed/pending_approval).
 - **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny) or
   content doc preview (Markdown). `ApprovalView` has branches per approval kind.
-- **SettingsModal.tsx** — raw YAML editor with live validation (debounced),
+- **SettingsModal.tsx** — sidebar shell: **Provider** (default) and
+  **Advanced** panes; defaults back to Provider on each open.
+- **ProviderPanel.tsx** — structured provider UI: provider dropdown,
+  credential status chip, OAuth sign-in flow (renders `auth.login.*`
+  events: device code / auth URL / prompt forms, submit/skip/cancel,
+  outcome banner), API-key entry, sign-out (two-step confirm), model
+  dropdown (`auth.models`), and **Apply** (rewrites the top-level
+  `provider:`/`model:` lines via `withProviderModel` in `yamlPatch.ts`
+  → `settings.save`).
+- **AdvancedPanel.tsx** — raw YAML editor with live validation (debounced),
   errors block save, warnings are informational.
+- **Header.tsx** also renders the credential status chip
+  (`useAuthStatus` hook: fetches `auth.status` once, refetches on
+  `settings.changed`); click opens Settings → Provider.
 - **ColumnGrid.tsx** — resizable layout for tool log | chat | content.
 - **Markdown.tsx** — react-markdown renderer for content docs.
 
@@ -417,6 +516,7 @@ by response). Steps execute concurrently with command dispatch.
 | Variable | Purpose |
 |---|---|
 | `COCONUT_PI_BINARY` | Override the sidecar binary path (dev/fakepi) |
+| `COCONUT_LOGIN_HELPER` | Override the coconut-login helper binary path (dev/tests) |
 | `COCONUT_PI_SCENARIO` | Path to a fakepi scenario JSON |
 | `COCONUT_CONFIG_DIR` | Override the app config directory |
 | `COCONUT_EXTENSION` | Override the pi extension path |
@@ -441,6 +541,13 @@ open build/bin/coconut.app
 The packaged app bundles: the Go binary, the embedded `frontend/dist`,
 the pi sidecar (single ~70MB binary in `build/sidecar/`), and the
 coconut extension (`pi-extension/coconut.ts`).
+
+**The sidecar must be compiled from pi's bun entry (`dist/bun/cli.js`)**,
+not the node entry (`dist/cli.js`): pi lazy-loads its OAuth flow modules
+and the bun entry is what registers them for the compiled binary. With the
+node entry, OAuth credentials in `auth.json` are silently unusable in the
+binary (env-var API keys still work). `scripts/build-sidecar.sh` handles
+this — don't "simplify" it back.
 
 ---
 

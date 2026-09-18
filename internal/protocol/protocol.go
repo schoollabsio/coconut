@@ -96,6 +96,15 @@ const (
 	CmdSettingsValidate = "settings.validate"
 	CmdWindowNew        = "window.new" // open an agent in a NEW window
 	CmdDiagnostics      = "diagnostics.log" // TEMP: frontend reports UI lifecycle for flicker debugging
+
+	// Auth (provider credentials via the coconut-login helper).
+	CmdAuthStatus      = "auth.status"       // providers + credential status
+	CmdAuthLogin       = "auth.login"        // start an OAuth/API-key login (async; progress via events)
+	CmdAuthLoginPrompt = "auth.login.prompt" // answer a login prompt (or cancel it)
+	CmdAuthLoginCancel = "auth.login.cancel" // abort an in-flight login
+	CmdAuthLogout      = "auth.logout"       // remove a provider credential
+	CmdAuthSetApiKey   = "auth.set_api_key"  // store an API key credential
+	CmdAuthModels      = "auth.models"       // models usable with current credentials
 )
 
 // ---------------------------------------------------------------------------
@@ -121,6 +130,15 @@ const (
 	EvSettingsChanged        = "settings.changed"
 	EvNotification           = "notification.created"
 	EvAgentThinkingCompleted = "agent.thinking.completed"
+
+	// Auth login flow (all carry a loginId; the frontend renders the
+	// steps as they arrive).
+	EvAuthLoginStarted   = "auth.login.started"
+	EvAuthLoginStep      = "auth.login.step"      // helper notify event (info/auth_url/device_code/progress)
+	EvAuthLoginPrompt    = "auth.login.prompt"    // helper prompt (text/secret/select/manual_code)
+	EvAuthLoginCompleted = "auth.login.completed"
+	EvAuthLoginCancelled = "auth.login.cancelled"
+	EvAuthLoginFailed    = "auth.login.failed"
 )
 
 // Stream (unsequenced) names.
@@ -218,6 +236,76 @@ type ConfigProblem struct {
 type SettingsValidateResult struct {
 	Valid    bool            `json:"valid"`
 	Problems []ConfigProblem `json:"problems"`
+}
+
+// ---------------------------------------------------------------------------
+// Auth (login helper) payloads
+// ---------------------------------------------------------------------------
+
+// AuthType values for auth.login.
+const (
+	AuthTypeOAuth  = "oauth"
+	AuthTypeAPIKey = "api_key"
+)
+
+type AuthLoginStartPayload struct {
+	Provider string `json:"provider"`
+	AuthType string `json:"authType"` // AuthTypeOAuth | AuthTypeAPIKey
+}
+
+// AuthLoginPromptPayload answers a login prompt. Cancel=true (or empty
+// value) dismisses the step.
+type AuthLoginPromptPayload struct {
+	PromptID string `json:"promptId"`
+	Value    string `json:"value,omitempty"`
+	Cancel   bool   `json:"cancel,omitempty"`
+}
+
+type AuthLoginCancelPayload struct {
+	LoginID string `json:"loginId"`
+}
+
+type AuthProviderPayload struct {
+	Provider string `json:"provider"`
+}
+
+type AuthSetApiKeyPayload struct {
+	Provider string `json:"provider"`
+	Key      string `json:"key"`
+}
+
+type AuthModelsPayload struct {
+	Provider string `json:"provider,omitempty"` // empty = all providers
+}
+
+// AuthProviderStatus is one provider in auth.status results.
+type AuthProviderStatus struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	OAuth  bool   `json:"oauth"`  // offers OAuth login
+	APIKey bool   `json:"apiKey"` // offers API-key entry
+	Configured bool `json:"configured"`
+	Source     string `json:"source,omitempty"` // e.g. "OAuth", "ANTHROPIC_API_KEY"
+	Type       string `json:"type,omitempty"`   // "oauth" | "api_key"
+}
+
+type AuthStatusResult struct {
+	Providers    []AuthProviderStatus `json:"providers"`
+	Credentials  []CredentialInfo     `json:"credentials"`
+	ActiveProvider string             `json:"activeProvider,omitempty"`
+}
+
+type CredentialInfo struct {
+	ProviderID string `json:"providerId"`
+	Type       string `json:"type"` // "oauth" | "api_key"
+}
+
+type AuthModel struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	ContextWindow int    `json:"contextWindow,omitempty"`
+	Reasoning     bool   `json:"reasoning,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

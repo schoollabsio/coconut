@@ -40,6 +40,20 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 		e.cmdSettingsValidate(cmd, respond)
 	case protocol.CmdSettingsSave:
 		e.cmdSettingsSave(cmd, respond)
+	case protocol.CmdAuthStatus:
+		e.cmdAuthStatus(cmd, respond)
+	case protocol.CmdAuthLogin:
+		e.cmdAuthLogin(cmd, respond)
+	case protocol.CmdAuthLoginPrompt:
+		e.cmdAuthLoginPrompt(cmd, respond)
+	case protocol.CmdAuthLoginCancel:
+		e.cmdAuthLoginCancel(cmd, respond)
+	case protocol.CmdAuthSetApiKey:
+		e.cmdAuthSetApiKey(cmd, respond)
+	case protocol.CmdAuthLogout:
+		e.cmdAuthLogout(cmd, respond)
+	case protocol.CmdAuthModels:
+		e.cmdAuthModels(cmd, respond)
 	case protocol.CmdDiagnostics:
 		var p struct {
 			Kind   string `json:"kind"`
@@ -443,6 +457,10 @@ func (e *Engine) cmdSettingsSave(cmd protocol.Command, respond chan []byte) {
 	e.state.settings = cfg
 	e.state.settingsRaw = p.YAML
 	e.emitEvent(protocol.EvSettingsChanged, protocol.SettingsYAMLPayload{YAML: p.YAML}, cmd.ID)
+
+	// Deprecation migration: a built-in provider's top-level apiKey moves
+	// to pi's credential store (auth.json). Best-effort, notified.
+	e.migrateYAMLApiKeyLocked(cfg)
 
 	// Launch-relevant settings may have changed; restart the sidecar.
 	if e.piUp {
