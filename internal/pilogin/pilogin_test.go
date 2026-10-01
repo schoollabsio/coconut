@@ -18,8 +18,9 @@ type fakeHelper struct {
 }
 
 // newFakeHelper wires up pipes and a Client.
-//   pipe A: client writes (cIn) → helper reads (hIn)
-//   pipe B: helper writes (hOut) → client reads (cOut)
+//
+//	pipe A: client writes (cIn) → helper reads (hIn)
+//	pipe B: helper writes (hOut) → client reads (cOut)
 func newFakeHelper(t *testing.T) (*Client, *fakeHelper) {
 	t.Helper()
 	hIn, cIn, err := os.Pipe() // hIn = read-end, cIn = write-end
@@ -266,22 +267,22 @@ func TestCommandIDBridgesIdentity(t *testing.T) {
 		select {
 		case ev := <-client.Events():
 			switch ev.Type {
-		case "notify", "prompt":
-			var head struct {
-				ID      string `json:"id"`
-				LoginID string `json:"loginId"`
+			case "notify", "prompt":
+				var head struct {
+					ID      string `json:"id"`
+					LoginID string `json:"loginId"`
+				}
+				_ = json.Unmarshal(ev.Raw, &head)
+				keyed := head.ID == "frontend-123" || head.LoginID == "frontend-123"
+				if !keyed {
+					t.Fatalf("event not keyed by the caller id: %s", ev.Raw)
+				}
+				if ev.Type == "notify" {
+					sawNotify = true
+				} else {
+					sawPrompt = true
+				}
 			}
-			_ = json.Unmarshal(ev.Raw, &head)
-			keyed := head.ID == "frontend-123" || head.LoginID == "frontend-123"
-			if !keyed {
-				t.Fatalf("event not keyed by the caller id: %s", ev.Raw)
-			}
-			if ev.Type == "notify" {
-				sawNotify = true
-			} else {
-				sawPrompt = true
-			}
-		}
 		case <-time.After(time.Until(deadline)):
 			t.Fatalf("missing events: notify=%v prompt=%v", sawNotify, sawPrompt)
 		}

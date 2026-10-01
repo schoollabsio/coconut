@@ -30,6 +30,7 @@ type domainState struct {
 	streaming   bool
 	msgCounter  int
 	toolCounter int
+	timelineSeq int64
 
 	// reasoning content assembly (parallel to text streaming above)
 	thinkText  string
@@ -38,8 +39,9 @@ type domainState struct {
 	thinkMs    int64
 
 	// pi-side correlation
-	toolArgs    map[string]toolStartInfo // toolCallId → args snapshot
-	pendingByID map[string]pendingApproval
+	toolArgs          map[string]toolStartInfo // toolCallId → args snapshot
+	pendingByID       map[string]pendingApproval
+	restoredToolCalls []restoredToolCall
 }
 
 type toolStartInfo struct {
@@ -53,6 +55,11 @@ type toolStartInfo struct {
 	Format     string // show_content display format: "markdown" (default) | "html"
 	GroupLabel string // agent-assigned label for tool call grouping
 	Args       map[string]any
+}
+
+type restoredToolCall struct {
+	call           protocol.ToolCall
+	messageOrdinal int // 1-based assistant message ordinal; 0 = orphan/best-effort append
 }
 
 // pendingApproval ties a frontend approval to the pi dialog request.
@@ -81,6 +88,8 @@ func (s *domainState) resetAgent() {
 	s.streaming = false
 	s.toolArgs = map[string]toolStartInfo{}
 	s.pendingByID = map[string]pendingApproval{}
+	s.restoredToolCalls = nil
+	s.timelineSeq = 0
 	s.thinkText = ""
 	s.thinkStart = time.Time{}
 	s.thinking = false
@@ -102,6 +111,7 @@ func (s *domainState) snapshot() protocol.SnapshotState {
 		// frontend sees partial text.
 		msgs = append(msgs, protocol.ChatMessage{
 			ID:           s.streamMsgID,
+			Seq:          s.timelineSeq + 1,
 			Role:         "assistant",
 			Text:         s.streamText,
 			Streaming:    true,
@@ -136,6 +146,7 @@ func (s *domainState) appendMessage(role, text string) protocol.ChatMessage {
 	s.msgCounter++
 	msg := protocol.ChatMessage{
 		ID:   msgID(s.msgCounter),
+		Seq:  s.nextTimelineSeq(),
 		Role: role,
 		Text: text,
 	}
@@ -175,12 +186,30 @@ func (s *domainState) endStream(finalText string) protocol.ChatMessage {
 	s.thinkStart = time.Time{}
 	s.thinkMs = 0
 	if strings.TrimSpace(finalText) == "" {
-		// Tool-call-only assistant turns carry no prose; emitting them
-		// would render an empty bubble (just the ✦ icon) in the chat.
-		return protocol.ChatMessage{}
+		if thinkText == "" {
+			// Tool-call-only assistant turns carry no prose; emitting them
+			// would render an empty bubble (just the ✦ icon) in the chat.
+			return protocol.ChatMessage{}
+		}
+		// Reasoning-only turn (thinking, then tool calls with no prose):
+		// keep the reasoning in history so a snapshot/resync shows the
+		// same "Thought for Ns" block the live stream showed. The chat
+		// renders text-less thinking messages as a collapsed header,
+		// never an empty bubble.
+		msg := protocol.ChatMessage{
+			ID:           s.streamMsgID,
+			Seq:          s.nextTimelineSeq(),
+			Role:         "assistant",
+			Thinking:     thinkText,
+			ThinkingDone: true,
+			ThinkingMs:   thinkMs,
+		}
+		s.messages = append(s.messages, msg)
+		return msg
 	}
 	msg := protocol.ChatMessage{
 		ID:           s.streamMsgID,
+		Seq:          s.nextTimelineSeq(),
 		Role:         "assistant",
 		Text:         finalText,
 		Thinking:     thinkText,
@@ -204,6 +233,51 @@ func (s *domainState) findToolCall(id string) *protocol.ToolCall {
 		}
 	}
 	return nil
+}
+
+func (s *domainState) nextTimelineSeq() int64 {
+	s.timelineSeq++
+	return s.timelineSeq
+}
+
+func (s *domainState) resequenceRestoredTimeline() {
+	next := int64(0)
+	assistantOrdinal := 0
+	grouped := map[int][]protocol.ToolCall{}
+	emitted := map[string]struct{}{}
+	for _, item := range s.restoredToolCalls {
+		if item.messageOrdinal > 0 {
+			grouped[item.messageOrdinal] = append(grouped[item.messageOrdinal], item.call)
+		}
+	}
+	calls := make([]protocol.ToolCall, 0, len(s.restoredToolCalls))
+	for i := range s.messages {
+		next++
+		s.messages[i].Seq = next
+		if s.messages[i].Role != "assistant" {
+			continue
+		}
+		assistantOrdinal++
+		if items := grouped[assistantOrdinal]; len(items) > 0 {
+			for j := range items {
+				next++
+				items[j].Seq = next
+				calls = append(calls, items[j])
+				emitted[items[j].ID] = struct{}{}
+			}
+		}
+	}
+	for _, item := range s.restoredToolCalls {
+		if _, ok := emitted[item.call.ID]; ok {
+			continue
+		}
+		next++
+		item.call.Seq = next
+		calls = append(calls, item.call)
+	}
+	s.toolCalls = calls
+	s.timelineSeq = next
+	s.restoredToolCalls = nil
 }
 
 func nowMs() int64 { return time.Now().UnixMilli() }

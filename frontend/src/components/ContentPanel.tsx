@@ -1,13 +1,12 @@
-import { useEffect } from 'react'
-
 import { BackendClient } from '../backend'
-import { Cmd, type ApprovalRequest } from '../protocol'
+import { Cmd, type ApprovalRequest, type ToolCall } from '../protocol'
 import { store, useUIState } from '../store'
 import { Markdown } from './Markdown'
 
 /**
- * Right panel: the fenced content area. Three modes:
+ * Right panel: the fenced content area. Mode precedence:
  *  - approval: a focused pending approval renders What/Why/Diff + Approve
+ *  - tool:     a focused tool call renders tool detail
  *  - preview:  the agent's latest show_content document
  *  - empty:    placeholder
  */
@@ -15,10 +14,13 @@ export function ContentPanel({ client }: { client: BackendClient }) {
   const content = useUIState((s) => s.content)
   const pendingApprovals = useUIState((s) => s.pendingApprovals)
   const focusedApprovalId = useUIState((s) => s.focusedApprovalId)
+  const toolCalls = useUIState((s) => s.agent.toolCalls)
+  const focusedToolCallId = useUIState((s) => s.focusedToolCallId)
 
   // Fall back to the first pending approval if focus dangles — a pending
   // approval must always be visible.
   const approval = pendingApprovals.find((a) => a.id === focusedApprovalId) ?? pendingApprovals[0] ?? null
+  const toolCall = toolCalls.find((c) => c.id === focusedToolCallId) ?? null
 
   let dot = 'bg-raised'
   let fileLabel = content?.path ?? 'content.md'
@@ -30,6 +32,11 @@ export function ContentPanel({ client }: { client: BackendClient }) {
     fileLabel = approval.path ?? (approval.kind === 'bash' ? 'shell' : fileLabel)
     statusText = 'pending approval'
     statusClass = 'text-warn'
+  } else if (toolCall) {
+    dot = toolStatusDotClass(toolCall)
+    fileLabel = toolCall.path ?? toolCall.label
+    statusText = 'tool call'
+    statusClass = 'text-info'
   } else if (content) {
     dot = 'bg-ok'
   }
@@ -46,6 +53,8 @@ export function ContentPanel({ client }: { client: BackendClient }) {
 
       {approval ? (
         <ApprovalView approval={approval} client={client} />
+      ) : toolCall ? (
+        <ToolCallView call={toolCall} />
       ) : content ? (
         content.format === 'html' ? (
           <HtmlPreview html={content.content} path={content.path} />
@@ -91,25 +100,93 @@ function HtmlPreview({ html, path }: { html: string; path: string }) {
   )
 }
 
+function ToolCallView({ call }: { call: ToolCall }) {
+  return (
+    <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Tool name</div>
+        <p className="text-lg text-ink leading-relaxed">{call.tool}</p>
+      </div>
+
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Full label</div>
+        <div className="text-base text-mute leading-relaxed">{call.label}</div>
+      </div>
+
+      {call.path && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Path</div>
+          <div className="text-base text-mute leading-relaxed">{call.path}</div>
+        </div>
+      )}
+
+      {call.what && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">What</div>
+          <p className="text-lg text-ink leading-relaxed">{call.what}</p>
+        </div>
+      )}
+
+      {call.why && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Why</div>
+          <div className="text-base text-mute leading-relaxed">{call.why}</div>
+        </div>
+      )}
+
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Status</div>
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${toolStatusDotClass(call)}`} />
+          <span className="text-base text-ink leading-relaxed">{formatToolStatus(call.status)}</span>
+        </div>
+      </div>
+
+      {call.groupLabel && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-info/80 mb-1">Group label</div>
+          <div className="text-base text-mute leading-relaxed">{call.groupLabel}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function toolStatusDotClass(call: ToolCall): string {
+  switch (call.status) {
+    case 'running':
+      return 'bg-accent animate-pulse'
+    case 'error':
+      return 'bg-danger'
+    case 'done':
+      return 'bg-ok'
+    case 'pending_approval':
+      return 'bg-warn animate-pulse'
+    default:
+      return 'bg-raised'
+  }
+}
+
+function formatToolStatus(status: ToolCall['status']): string {
+  switch (status) {
+    case 'running':
+      return 'running'
+    case 'done':
+      return 'done'
+    case 'error':
+      return 'error'
+    case 'pending_approval':
+      return 'pending approval'
+    default:
+      return status
+  }
+}
+
 function ApprovalView({ approval, client }: { approval: ApprovalRequest; client: BackendClient }) {
   const respond = (decision: 'allow' | 'dismiss') => {
     store.focusApproval(null)
     void client.command(Cmd.ApprovalRespond, { approvalId: approval.id, decision })
   }
-
-  // Cmd+Return (or Ctrl+Return on non-Mac) approves the currently focused approval.
-  // Registered at the document level so it works regardless of which element has focus,
-  // consistent with SettingsModal's Escape-to-close pattern.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'Enter' || e.key === 'NumpadEnter')) {
-        e.preventDefault()
-        respond('allow')
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [approval.id, client])
 
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">

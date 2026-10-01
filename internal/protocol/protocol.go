@@ -94,7 +94,7 @@ const (
 	CmdSettingsGet      = "settings.get"
 	CmdSettingsSave     = "settings.save"
 	CmdSettingsValidate = "settings.validate"
-	CmdWindowNew        = "window.new" // open an agent in a NEW window
+	CmdWindowNew        = "window.new"      // open an agent in a NEW window
 	CmdDiagnostics      = "diagnostics.log" // TEMP: frontend reports UI lifecycle for flicker debugging
 
 	// Auth (provider credentials via the coconut-login helper).
@@ -134,8 +134,8 @@ const (
 	// Auth login flow (all carry a loginId; the frontend renders the
 	// steps as they arrive).
 	EvAuthLoginStarted   = "auth.login.started"
-	EvAuthLoginStep      = "auth.login.step"      // helper notify event (info/auth_url/device_code/progress)
-	EvAuthLoginPrompt    = "auth.login.prompt"    // helper prompt (text/secret/select/manual_code)
+	EvAuthLoginStep      = "auth.login.step"   // helper notify event (info/auth_url/device_code/progress)
+	EvAuthLoginPrompt    = "auth.login.prompt" // helper prompt (text/secret/select/manual_code)
 	EvAuthLoginCompleted = "auth.login.completed"
 	EvAuthLoginCancelled = "auth.login.cancelled"
 	EvAuthLoginFailed    = "auth.login.failed"
@@ -280,19 +280,20 @@ type AuthModelsPayload struct {
 
 // AuthProviderStatus is one provider in auth.status results.
 type AuthProviderStatus struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	OAuth  bool   `json:"oauth"`  // offers OAuth login
-	APIKey bool   `json:"apiKey"` // offers API-key entry
-	Configured bool `json:"configured"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	OAuth      bool   `json:"oauth"`  // offers OAuth login
+	APIKey     bool   `json:"apiKey"` // offers API-key entry
+	Configured bool   `json:"configured"`
 	Source     string `json:"source,omitempty"` // e.g. "OAuth", "ANTHROPIC_API_KEY"
 	Type       string `json:"type,omitempty"`   // "oauth" | "api_key"
 }
 
 type AuthStatusResult struct {
-	Providers    []AuthProviderStatus `json:"providers"`
-	Credentials  []CredentialInfo     `json:"credentials"`
-	ActiveProvider string             `json:"activeProvider,omitempty"`
+	Providers      []AuthProviderStatus `json:"providers"`
+	Credentials    []CredentialInfo     `json:"credentials"`
+	ActiveProvider string               `json:"activeProvider,omitempty"`
+	ActiveModel    string               `json:"activeModel,omitempty"`
 }
 
 type CredentialInfo struct {
@@ -317,9 +318,9 @@ type AuthModel struct {
 // but internally we use 'reasoning' and 'generating' for clarity.
 const (
 	StatusIdle                   = "idle"
-	StatusReasoning              = "reasoning"     // was 'thinking'
-	StatusGenerating             = "generating"    // was 'streaming'
-	StatusRunningTool            = "running_tool"  // NEW: tool executing without approval
+	StatusReasoning              = "reasoning"              // was 'thinking'
+	StatusGenerating             = "generating"             // was 'streaming'
+	StatusRunningTool            = "running_tool"           // NEW: tool executing without approval
 	StatusAwaitingToolApproval   = "awaiting_tool_approval" // NEW: tool needs approval
 	StatusAwaitingApprovalLegacy = "awaiting_approval"      // deprecated, for backward compat
 	StatusError                  = "error"
@@ -328,14 +329,15 @@ const (
 // Status aliases for backward compatibility with existing code.
 // These map the old names to the new semantic names.
 const (
-	StatusThinking               = StatusReasoning  // alias
-	StatusStreaming              = StatusGenerating // alias
-	StatusAwaitingApprovalCompat = StatusAwaitingToolApproval // for approval workflows
+	StatusThinking               = StatusReasoning              // alias
+	StatusStreaming              = StatusGenerating             // alias
+	StatusAwaitingApprovalCompat = StatusAwaitingToolApproval   // for approval workflows
 	StatusAwaitingApproval       = StatusAwaitingApprovalLegacy // backward compat
 )
 
 type ChatMessage struct {
 	ID           string `json:"id"`
+	Seq          int64  `json:"seq"`
 	Role         string `json:"role"` // "user" | "assistant"
 	Text         string `json:"text"`
 	Streaming    bool   `json:"streaming,omitempty"`
@@ -346,18 +348,18 @@ type ChatMessage struct {
 
 // Tool call statuses.
 const (
-	ToolRunning           = "running"
-	ToolDone              = "done"
-	ToolError             = "error"
-	ToolPendingApproval   = "pending_approval"
+	ToolRunning         = "running"
+	ToolDone            = "done"
+	ToolError           = "error"
+	ToolPendingApproval = "pending_approval"
 )
 
 // Tool phases for status emission during tool execution.
 const (
-	ToolApprovalReasonEdit  = "propose_edit"
-	ToolApprovalReasonBash  = "bash"
-	ToolReasonRun           = "run"
-	ToolReasonTool          = "tool"
+	ToolApprovalReasonEdit = "propose_edit"
+	ToolApprovalReasonBash = "bash"
+	ToolReasonRun          = "run"
+	ToolReasonTool         = "tool"
 )
 
 // Helper function to determine if a tool call needs approval.
@@ -372,6 +374,7 @@ func NeedApproval(tool string) bool {
 
 type ToolCall struct {
 	ID         string `json:"id"`
+	Seq        int64  `json:"seq"`
 	Tool       string `json:"tool"`           // pi toolName: read, run, propose_edit, show_content, …
 	Label      string `json:"label"`          // display line, e.g. "Read App.tsx"
 	Path       string `json:"path,omitempty"` // primary file, if any
@@ -392,6 +395,9 @@ type ApprovalRequest struct {
 	ID    string `json:"id"`
 	Kind  string `json:"kind"` // ApprovalKind*
 	Title string `json:"title"`
+	// ToolCallID ties the approval to its originating tool call. Always set
+	// for tool-gated approvals; the frontend uses it for exact matching.
+	ToolCallID string `json:"toolCallId,omitempty"`
 	// propose_edit:
 	Path string `json:"path,omitempty"`
 	What string `json:"what,omitempty"`

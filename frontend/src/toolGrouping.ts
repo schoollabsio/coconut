@@ -2,7 +2,7 @@ import type { ToolCall } from './protocol'
 
 /**
  * A group of tool calls rendered as a single collapsible unit in the
- * ToolLog. A group may contain one (singleton) or many tool calls.
+ * chat timeline. A group may contain one (singleton) or many tool calls.
  *
  * Groups are derived data — recompute via `groupToolCalls` whenever the
  * flat tool call array changes. Collapsed/expanded state is tracked
@@ -146,18 +146,6 @@ export const agentGrouper: ToolCallGrouper = {
  * the heuristic.
  */
 export const defaultGroupers: ToolCallGrouper[] = [agentGrouper, readGrouper]
-
-// Helper functions for tool grouping
-
-/**
- * Returns true if the group at the given index contains the last tool call.
- * Used to determine if a group should be auto-expanded (when it's the bottom group).
- */
-export function isLastGroup(groups: ToolCallGroup[], groupIndex: number): boolean {
-  if (groupIndex < 0 || groupIndex >= groups.length) return false
-  const lastGroup = groups[groups.length - 1]
-  return lastGroup.key === groups[groupIndex].key
-}
 
 // ---------------------------------------------------------------------------
 // Orchestrator

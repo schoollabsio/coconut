@@ -178,11 +178,86 @@ describe('UIStore', () => {
     expect(s.state.agent.status).toBe('reasoning')
   })
 
+  it('keeps parallel same-kind approvals attached to their own tool calls when one resolves', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    // Two parallel propose_edit calls in one turn (pi runs them concurrently).
+    s.applyBackendMessage(ev(2, Ev.AgentToolStarted, { id: 'tc-a', tool: 'propose_edit', label: 'Edit a.ts', status: 'running' }))
+    s.applyBackendMessage(ev(3, Ev.AgentToolStarted, { id: 'tc-b', tool: 'propose_edit', label: 'Edit b.ts', status: 'running' }))
+    // Both approvals arrive before either resolves. toolCallId is the exact
+    // backend-supplied link — previously the store guessed "most recent
+    // running of kind", which swapped the two, so resolving the first left
+    // the second's approvalId dangling on the completed call and BOTH cards
+    // disappeared from the chat (the approvals were still actionable via ⌘⏎).
+    s.applyBackendMessage(ev(4, Ev.ApprovalRequested, { id: 'ap-a', kind: 'propose_edit', title: 'Edit a.ts', path: 'a.ts', toolCallId: 'tc-a' }))
+    s.applyBackendMessage(ev(5, Ev.ApprovalRequested, { id: 'ap-b', kind: 'propose_edit', title: 'Edit b.ts', path: 'b.ts', toolCallId: 'tc-b' }))
+
+    expect(s.state.agent.toolCalls.find((c) => c.id === 'tc-a')).toMatchObject({ status: 'pending_approval', approvalId: 'ap-a' })
+    expect(s.state.agent.toolCalls.find((c) => c.id === 'tc-b')).toMatchObject({ status: 'pending_approval', approvalId: 'ap-b' })
+
+    // Approve the first; its tool completes. The second card must remain
+    // fully wired: status pending_approval + approvalId present in
+    // pendingApprovals (the exact condition Chat renders a card on).
+    s.applyBackendMessage(ev(6, Ev.ApprovalResolved, { approvalId: 'ap-a', decision: 'allow' }))
+    s.applyBackendMessage(ev(7, Ev.AgentToolCompleted, { toolCallId: 'tc-a', status: 'done' }))
+
+    expect(s.state.pendingApprovals.map((a) => a.id)).toEqual(['ap-b'])
+    const b = s.state.agent.toolCalls.find((c) => c.id === 'tc-b')
+    expect(b).toMatchObject({ status: 'pending_approval', approvalId: 'ap-b' })
+    const approvalById = new Map(s.state.pendingApprovals.map((a) => [a.id, a]))
+    expect(b?.approvalId !== undefined && approvalById.has(b.approvalId)).toBe(true)
+  })
+
+  it('falls back to kind-based matching when an approval lacks toolCallId', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.AgentToolStarted, { id: 'c1', tool: 'run', label: 'Run make', status: 'running' }))
+    s.applyBackendMessage(ev(3, Ev.ApprovalRequested, { id: 'ap-1', kind: 'bash', title: 'Run command?', command: 'make' }))
+    expect(s.state.agent.toolCalls[0]).toMatchObject({ status: 'pending_approval', approvalId: 'ap-1' })
+  })
+
+  it('keeps tool and approval focus mutually exclusive', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+
+    s.focusToolCall('tc-1')
+    expect(s.state.focusedToolCallId).toBe('tc-1')
+    expect(s.state.focusedApprovalId).toBeNull()
+
+    s.focusApproval('ap-1')
+    expect(s.state.focusedApprovalId).toBe('ap-1')
+    expect(s.state.focusedToolCallId).toBeNull()
+  })
+
+  it('clears tool focus on content.updated and AgentReset', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+
+    s.focusToolCall('tc-1')
+    s.applyBackendMessage(ev(2, Ev.ContentUpdated, { path: 'content.md', content: '# Hi', updatedAt: 1 }))
+    expect(s.state.content?.path).toBe('content.md')
+    expect(s.state.focusedToolCallId).toBeNull()
+
+    s.focusToolCall('tc-2')
+    s.applyBackendMessage(ev(3, Ev.AgentReset))
+    expect(s.state.focusedToolCallId).toBeNull()
+    expect(s.state.focusedApprovalId).toBeNull()
+  })
+
   it('updates content on content.updated', () => {
     const s = new UIStore()
     s.applyBackendMessage(snap(1))
     s.applyBackendMessage(ev(2, Ev.ContentUpdated, { path: 'content.md', content: '# Hi', updatedAt: 1 }))
     expect(s.state.content?.path).toBe('content.md')
+  })
+
+  it('clears stale tool focus during snapshot reconciliation', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.focusToolCall('tc-1')
+    expect(s.state.focusedToolCallId).toBe('tc-1')
+    s.applyBackendMessage(snap(2))
+    expect(s.state.focusedToolCallId).toBeNull()
   })
 })
 

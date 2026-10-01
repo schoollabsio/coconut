@@ -16,7 +16,7 @@ Coconut is a desktop coding agent app where you chat with an AI agent, watch its
 
 1. **Pi sidecar**: The `pi` agent in RPC mode with a custom extension (`coconut.ts`) that gates `propose_edit` behind approvals (bash too, with a whitelist).
 2. **Go backend**: Owns domain truth, sequences events with a global `seq`, normalizes pi events, emits snapshots. Single-writer actor pattern — all state mutations on one goroutine.
-3. **React frontend**: Three panes — tool log, chat (with streaming text), content panel (approvals with diffs + rendered docs).
+3. **React frontend**: Two panes — a unified chat timeline (with streaming text, inline approvals, and tool calls) and a content panel (approvals with diffs + rendered docs).
 
 ## Key principles
 

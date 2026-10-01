@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { BackendClient, BackendUnavailableError } from './backend'
 import { Cmd, type BackendMessage } from './protocol'
+import { pickApprovalToRespond } from './approvalActions'
 import { store, useUIState } from './store'
 import { Chat } from './components/Chat'
 import { ColumnGrid } from './components/ColumnGrid'
@@ -8,13 +9,14 @@ import { ContentPanel } from './components/ContentPanel'
 import { Header } from './components/Header'
 import { SettingsModal } from './components/SettingsModal'
 import { AgentPicker } from './components/AgentPicker'
-import { ToolLog } from './components/ToolLog'
 
 export default function App() {
   const client = useMemo(() => new BackendClient(), [])
   const needsWorkspace = useUIState((s) => s.needsWorkspace)
   const notifications = useUIState((s) => s.notifications)
   const connected = useUIState((s) => s.connected)
+  const pendingApprovals = useUIState((s) => s.pendingApprovals)
+  const focusedApprovalId = useUIState((s) => s.focusedApprovalId)
 
   // NOTE: no "booted" ref guard — React StrictMode (dev) intentionally
   // mounts, cleans up, and re-mounts effects. A ref guard would skip the
@@ -92,6 +94,19 @@ export default function App() {
     }
   }, [client])
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return
+      if (e.key !== 'Enter' && e.key !== 'NumpadEnter') return
+      const approval = pickApprovalToRespond(pendingApprovals, focusedApprovalId)
+      if (!approval) return
+      e.preventDefault()
+      void client.command(Cmd.ApprovalRespond, { approvalId: approval.id, decision: 'allow' })
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [client, focusedApprovalId, pendingApprovals])
+
   return (
     // Content fills the whole window (hidden titlebar). The root is the
     // window drag region; interactive containers opt back out (no-drag).
@@ -112,11 +127,7 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <ColumnGrid
-          tools={<ToolLog />}
-          chat={<Chat client={client} />}
-          content={<ContentPanel client={client} />}
-        />
+        <ColumnGrid chat={<Chat client={client} />} content={<ContentPanel client={client} />} />
       )}
 
       <SettingsModal client={client} />

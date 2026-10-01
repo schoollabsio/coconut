@@ -83,11 +83,11 @@ type Client struct {
 // NewWithPipes builds a Client over existing streams (tests, fakes).
 func NewWithPipes(stdin io.WriteCloser, stdout io.Reader) *Client {
 	c := &Client{
-		stdin:    stdin,
-		stdout:   stdout,
-		pending:  make(map[string]chan pendingResult),
-		events:   make(chan Event, 256),
-		exited:   make(chan struct{}),
+		stdin:   stdin,
+		stdout:  stdout,
+		pending: make(map[string]chan pendingResult),
+		events:  make(chan Event, 256),
+		exited:  make(chan struct{}),
 	}
 	go c.readLoop()
 	return c
@@ -254,7 +254,9 @@ func (c *Client) route(line []byte) {
 
 // jsonGetMessage pulls the "message" field out of a record.
 func jsonGetMessage(line []byte) string {
-	var m struct{ Message string `json:"message"` }
+	var m struct {
+		Message string `json:"message"`
+	}
 	_ = json.Unmarshal(line, &m)
 	return m.Message
 }

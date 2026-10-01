@@ -1,8 +1,9 @@
 # coconut
 
 A desktop coding-agent app: chat with an agent that works in a folder you
-choose, watch its tool calls live, and approve every file edit before it
-lands. Agent output documents render into a fenced content panel.
+choose, watch its unified railed timeline of messages and tool calls, and
+approve every file edit before it lands. Agent output documents render
+into a fenced content panel.
 
 Architecture (see PLAN.md for the full spec):
 
@@ -27,9 +28,9 @@ Architecture (see PLAN.md for the full spec):
   — owns domain state, normalizes pi events, sequences everything with a
   global `seq`, serves snapshots, bridges approvals, and owns the helper
   lifecycle.
-- **React frontend** (`frontend/`) — event-driven UI: tool log | chat |
-  content panel, resizable/collapsible, and a sidebar settings modal
-  (structured Provider panel + raw YAML Advanced pane).
+- **React frontend** (`frontend/`) — event-driven UI: two-panel layout
+  (chat timeline | content panel), resizable/collapsible, and a sidebar
+  settings modal (structured Provider panel + raw YAML Advanced pane).
 
 ## Develop
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withProviderModel } from '../yamlPatch'
+import { readProviderModel, withProviderModel } from '../yamlPatch'
 
 // Mirrors the shipped DefaultSettingsYAML (internal/core/settings.go).
 const TEMPLATE = `# coconut settings
@@ -57,5 +57,37 @@ describe('withProviderModel', () => {
     const out = withProviderModel('# just comments\n', 'groq', 'llama-3')
     expect(out).toMatch(/^provider: groq$/m)
     expect(out).toMatch(/^model: llama-3$/m)
+  })
+
+  it('comments out a live model line when no model is chosen', () => {
+    const yaml = TEMPLATE.replace('# model: claude-sonnet-4-5', 'model: gpt-5')
+    const out = withProviderModel(yaml, 'anthropic', null)
+    expect(out).not.toMatch(/^model:/m)
+    expect(out).toMatch(/^# model: gpt-5$/m)
+  })
+
+  it('revives the commented model line when a model is chosen again', () => {
+    const yaml = TEMPLATE.replace('# model: claude-sonnet-4-5', 'model: gpt-5')
+    const cleared = withProviderModel(yaml, 'anthropic', null)
+    const out = withProviderModel(cleared, 'anthropic', 'claude-opus-4')
+    expect(out).toMatch(/^model: claude-opus-4$/m)
+    expect(out.match(/^#?\s*model:/gm)).toHaveLength(1)
+  })
+})
+
+describe('readProviderModel', () => {
+  it('reads live provider/model lines', () => {
+    const yaml = TEMPLATE.replace('# model: claude-sonnet-4-5', 'model: claude-sonnet-4-5')
+    expect(readProviderModel(yaml)).toEqual({ provider: 'anthropic', model: 'claude-sonnet-4-5' })
+  })
+
+  it('ignores commented lines and blank values', () => {
+    expect(readProviderModel(TEMPLATE)).toEqual({ provider: 'anthropic', model: null })
+    expect(readProviderModel('# provider: x\nprovider:\n')).toEqual({ provider: null, model: null })
+  })
+
+  it('ignores indented providers: entries', () => {
+    const yaml = 'providers:\n  openrouter:\n    model: nope\n'
+    expect(readProviderModel(yaml)).toEqual({ provider: null, model: null })
   })
 })

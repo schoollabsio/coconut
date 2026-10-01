@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ToolCall } from './protocol'
-import { groupToolCalls, readGrouper, agentGrouper, defaultGroupers, isLastGroup } from './toolGrouping'
+import { groupToolCalls, readGrouper, agentGrouper, defaultGroupers } from './toolGrouping'
 
 function tc(overrides: Partial<ToolCall> = {}): ToolCall {
   return {
@@ -276,44 +276,3 @@ describe('defaultGroupers', () => {
   })
 })
 
-describe('isLastGroup', () => {
-  it('returns true for the last group', () => {
-    // Use edit tools instead of read (which gets grouped by readGrouper)
-    const groups = groupToolCalls([edit('c1', 'Edit A'), edit('c2', 'Edit B')])
-    expect(groups).toHaveLength(2)
-    expect(isLastGroup(groups, 0)).toBe(false)
-    expect(isLastGroup(groups, 1)).toBe(true)
-    expect(isLastGroup(groups, 2)).toBe(false)
-  })
-
-  it('returns true when there is only one group', () => {
-    const groups = groupToolCalls([tc({ id: 'c1' })])
-    expect(isLastGroup(groups, 0)).toBe(true)
-  })
-
-  it('returns false for empty groups array', () => {
-    expect(isLastGroup([], 0)).toBe(false)
-    expect(isLastGroup([], -1)).toBe(false)
-  })
-
-  it('returns true for groups with multiple calls', () => {
-    // Use edit tools to avoid readGrouper grouping
-    const groups = groupToolCalls([edit('c1', 'Edit A'), edit('c2', 'Edit B'), edit('c3', 'Edit C')])
-    expect(groups).toHaveLength(3)
-    expect(isLastGroup(groups, 0)).toBe(false)
-    expect(isLastGroup(groups, 1)).toBe(false)
-    expect(isLastGroup(groups, 2)).toBe(true)
-  })
-
-  it('handles grouped tool calls correctly', () => {
-    // Use a mix: two reads (grouped) + one edit (singleton)
-    const groups = groupToolCalls([
-      tc({ id: 'c1' }), // read
-      tc({ id: 'c2' }), // read - groups with c1
-      edit('c3', 'Edit C'),
-    ])
-    expect(groups).toHaveLength(2) // 1 group of 2 reads + 1 singleton edit
-    expect(isLastGroup(groups, 0)).toBe(false)
-    expect(isLastGroup(groups, 1)).toBe(true)
-  })
-})

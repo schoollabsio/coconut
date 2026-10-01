@@ -146,6 +146,7 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 
 		call := protocol.ToolCall{
 			ID:         m.ToolCallID,
+			Seq:        e.state.nextTimelineSeq(),
 			Tool:       m.ToolName,
 			Label:      toolLabel(m.ToolName, info),
 			Path:       info.Path,
@@ -414,13 +415,14 @@ func (e *Engine) bridgeProposeEdit(req extUIRequest) {
 
 	e.state.toolCounter++
 	approval := protocol.ApprovalRequest{
-		ID:    "ap-" + itoa(e.state.toolCounter),
-		Kind:  protocol.ApprovalKindProposeEdit,
-		Title: "Edit " + filepath.Base(payload.Path),
-		Path:  payload.Path,
-		What:  payload.What,
-		Why:   payload.Why,
-		Diff:  diff,
+		ID:         "ap-" + itoa(e.state.toolCounter),
+		Kind:       protocol.ApprovalKindProposeEdit,
+		Title:      "Edit " + filepath.Base(payload.Path),
+		ToolCallID: payload.ToolCallID,
+		Path:       payload.Path,
+		What:       payload.What,
+		Why:        payload.Why,
+		Diff:       diff,
 	}
 	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
 }
@@ -439,12 +441,13 @@ func (e *Engine) bridgeRunApproval(req extUIRequest) {
 	}
 	e.state.toolCounter++
 	approval := protocol.ApprovalRequest{
-		ID:      "ap-" + itoa(e.state.toolCounter),
-		Kind:    protocol.ApprovalKindBash,
-		Title:   "Run command?",
-		Command: payload.Command,
-		What:    payload.What,
-		Why:     payload.Why,
+		ID:         "ap-" + itoa(e.state.toolCounter),
+		Kind:       protocol.ApprovalKindBash,
+		Title:      "Run command?",
+		ToolCallID: payload.ToolCallID,
+		Command:    payload.Command,
+		What:       payload.What,
+		Why:        payload.Why,
 	}
 	e.registerApprovalLocked(approval, req.ID, payload.ToolCallID)
 }

@@ -245,7 +245,9 @@ cancelled:
 			if ev.Name != protocol.EvAuthLoginCancelled {
 				continue
 			}
-			var pl struct{ LoginID string `json:"loginId"` }
+			var pl struct {
+				LoginID string `json:"loginId"`
+			}
 			pb, _ := json.Marshal(ev.Payload)
 			if err := json.Unmarshal(pb, &pl); err != nil || pl.LoginID != loginID {
 				t.Fatalf("cancelled keyed by %q, want %q", pl.LoginID, loginID)

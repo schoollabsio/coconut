@@ -126,6 +126,7 @@ func (e *Engine) startSidecarLocked(agentSlug, switchTo string, fresh bool, done
 			// first, then kick off the async message fetch.
 			e.rebuildToolCallsLocked(sessionFile)
 			e.rebuildMessagesLocked(func() {
+				e.state.resequenceRestoredTimeline()
 				e.emitEvent(protocol.EvSessionRestored, map[string]any{
 					"workspacePath": e.state.workspacePath,
 					"agentName":     e.state.agentName,
@@ -191,14 +192,15 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 	defer f.Close()
 
 	type tcEntry struct {
-		id         string
-		tool       string
-		label      string
-		path       string
-		what       string
-		why        string
-		groupLabel string
-		status     string
+		id             string
+		tool           string
+		label          string
+		path           string
+		what           string
+		why            string
+		groupLabel     string
+		status         string
+		messageOrdinal int
 	}
 
 	calls := map[string]*tcEntry{}
@@ -208,15 +210,17 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	assistantOrdinal := 0
+	currentOrdinal := 0
 	toolCallCounter := 0
 	for scanner.Scan() {
 		var line struct {
-			Type       string         `json:"type"`
-			ToolCallID string         `json:"toolCallId"`
-			ToolName   string         `json:"toolName"`
-			Args       map[string]any `json:"args"`
-			IsError    bool           `json:"isError"`
-			Title      string         `json:"title"`
+			Type       string          `json:"type"`
+			ToolCallID string          `json:"toolCallId"`
+			ToolName   string          `json:"toolName"`
+			Args       map[string]any  `json:"args"`
+			IsError    bool            `json:"isError"`
+			Title      string          `json:"title"`
 			MessageRaw json.RawMessage `json:"message"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
@@ -226,18 +230,21 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 		switch line.Type {
 		case "tool_execution_start":
 			info := extractToolArgs(line.ToolName, line.Args)
-			entry := &tcEntry{
-				id:         line.ToolCallID,
-				tool:       line.ToolName,
-				path:       info.Path,
-				what:       info.What,
-				why:        info.Why,
-				groupLabel: info.GroupLabel,
-				status:     protocol.ToolDone, // all historical calls are done
+			entry, exists := calls[line.ToolCallID]
+			if !exists {
+				entry = &tcEntry{id: line.ToolCallID, status: protocol.ToolDone}
+				calls[line.ToolCallID] = entry
+				order = append(order, line.ToolCallID)
 			}
+			entry.tool = line.ToolName
 			entry.label = toolLabel(line.ToolName, info)
-			calls[line.ToolCallID] = entry
-			order = append(order, line.ToolCallID)
+			entry.path = info.Path
+			entry.what = info.What
+			entry.why = info.Why
+			entry.groupLabel = info.GroupLabel
+			if currentOrdinal > 0 {
+				entry.messageOrdinal = currentOrdinal
+			}
 
 			// Track the most recent show_content args for content restoration.
 			if line.ToolName == "show_content" && line.Args != nil {
@@ -286,10 +293,11 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 			var msg struct {
 				Role    string `json:"role"`
 				Content []struct {
-					Type       string         `json:"type"`
-					Name       string         `json:"name"`
-					ID         string         `json:"id"`
-					Arguments  map[string]any `json:"arguments"`
+					Type      string         `json:"type"`
+					Name      string         `json:"name"`
+					ID        string         `json:"id"`
+					Arguments map[string]any `json:"arguments"`
+					Text      string         `json:"text"`
 				} `json:"content"`
 			}
 			if err := json.Unmarshal(line.MessageRaw, &msg); err != nil {
@@ -297,6 +305,19 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 			}
 			if msg.Role != "assistant" {
 				continue
+			}
+			hasText := false
+			for _, block := range msg.Content {
+				if block.Type == "text" && block.Text != "" {
+					hasText = true
+					break
+				}
+			}
+			if hasText {
+				assistantOrdinal++
+				currentOrdinal = assistantOrdinal
+			} else {
+				currentOrdinal = 0
 			}
 			for _, block := range msg.Content {
 				if block.Type != "toolCall" || block.Name == "" {
@@ -309,21 +330,19 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 					toolCallCounter++
 					id = fmt.Sprintf("transcript-%d", toolCallCounter)
 				}
-				if _, exists := calls[id]; exists {
-					continue
+				entry, exists := calls[id]
+				if !exists {
+					entry = &tcEntry{id: id, status: protocol.ToolDone}
+					calls[id] = entry
+					order = append(order, id)
 				}
-				entry := &tcEntry{
-					id:         id,
-					tool:       block.Name,
-					path:       info.Path,
-					what:       info.What,
-					why:        info.Why,
-					groupLabel: info.GroupLabel,
-					status:     protocol.ToolDone,
-				}
+				entry.tool = block.Name
 				entry.label = toolLabel(block.Name, info)
-				calls[id] = entry
-				order = append(order, id)
+				entry.path = info.Path
+				entry.what = info.What
+				entry.why = info.Why
+				entry.groupLabel = info.GroupLabel
+				entry.messageOrdinal = currentOrdinal
 				if block.Name == "show_content" && block.Arguments != nil {
 					e.restoreContentFromArgs(block.Arguments)
 					lastShowContentArgs = block.Arguments
@@ -332,21 +351,24 @@ func (e *Engine) rebuildToolCallsLocked(sessionFile string) {
 		}
 	}
 
-	// Build the final tool calls slice, preserving encounter order.
-	e.state.toolCalls = make([]protocol.ToolCall, 0, len(order))
+	restored := make([]restoredToolCall, 0, len(order))
 	for _, id := range order {
 		entry := calls[id]
-			e.state.toolCalls = append(e.state.toolCalls, protocol.ToolCall{
+		restored = append(restored, restoredToolCall{
+			call: protocol.ToolCall{
 				ID:         entry.id,
 				Tool:       entry.tool,
 				Label:      entry.label,
 				Path:       entry.path,
 				What:       entry.what,
 				Why:        entry.why,
-				GroupLabel: entry.groupLabel,
 				Status:     entry.status,
-			})
+				GroupLabel: entry.groupLabel,
+			},
+			messageOrdinal: entry.messageOrdinal,
+		})
 	}
+	e.state.restoredToolCalls = restored
 }
 
 // extractToolArgs builds a toolStartInfo from a tool execution's args
@@ -408,12 +430,12 @@ func (e *Engine) restoreContentFromArgs(args map[string]any) {
 	}
 	if path, ok := args["path"].(string); ok && path != "" {
 		content, _ := args["content"].(string)
-			e.state.content = &protocol.ContentDoc{
-				Path:      path,
-				Content:   content,
-				Format:    format,
-				UpdatedAt: nowMs(),
-			}
+		e.state.content = &protocol.ContentDoc{
+			Path:      path,
+			Content:   content,
+			Format:    format,
+			UpdatedAt: nowMs(),
+		}
 	}
 }
 
@@ -620,7 +642,7 @@ func errString(err error, fallback string) string {
 
 // parsePiMessages converts pi's AgentMessage list to chat messages.
 // Roles: user (string or block content) and assistant (text blocks
-// joined); toolResult/bashExecution are skipped (the tool log is
+// joined); toolResult/bashExecution are skipped (the chat timeline is
 // event-derived, not history-derived).
 func parsePiMessages(data json.RawMessage) []protocol.ChatMessage {
 	var wrapper struct {

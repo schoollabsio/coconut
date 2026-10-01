@@ -1,8 +1,9 @@
 # AGENTS.md — Coconut: A human-in-the-loop coding agent
 
 Coconut is a desktop coding-agent app: chat with an agent that works in a
-folder you choose, watch its tool calls live, and approve every file edit
-before it lands. Agent output documents render into a fenced content panel.
+folder you choose, watch its unified railed timeline of messages and tool
+calls, and approve every file edit before it lands. Agent output documents
+render into a fenced content panel.
 
 Architecture:
 
@@ -21,9 +22,10 @@ Architecture:
 - **Go backend** (`internal/core`, `internal/piadapter`, `internal/protocol`) —
   owns domain state, normalizes pi events, sequences everything with a global
   `seq`, serves snapshots, and bridges approvals. Single-writer actor.
-- **React frontend** (`frontend/`) — event-driven UI: tool log | chat |
-  content panel, resizable/collapsible, and a sidebar settings modal
-  (structured **Provider** panel + raw YAML **Advanced** pane).
+- **React frontend** (`frontend/`) — event-driven UI: two-panel layout
+  (chat timeline | content panel), resizable/collapsible, and a sidebar
+  settings modal (structured **Provider** panel + raw YAML **Advanced**
+  pane).
 
 Read `PLAN.md` (the full technical spec) and `README.md` first.
 
@@ -92,12 +94,15 @@ JSONL over stdio to the Go actor. This is a deliberate exception to
 │   ├── src/
 │   │   ├── backend.ts         # BackendClient: Wails ↔ protocol bridge
 │   │   ├── protocol.ts        # Mirror of internal/protocol (keep in sync)
+│   │   ├── timeline.ts        # pure buildTimeline(messages, toolCalls)
+│   │   ├── railGeometry.ts    # measured bullets → SVG rail paths
+│   │   ├── approvalActions.ts  # global ⌘⏎ approval targeting / dismiss-on-send
 │   │   ├── store.ts           # UIStore (single client-side state store; auth slice)
 │   │   ├── store.test.ts      # Vitest tests for the store
 │   │   ├── App.tsx            # Orchestrator: connect → snapshot → live events
 │   │   ├── useAuthStatus.ts   # header chip: keep provider credential status fresh
 │   │   ├── yamlPatch.ts       # pure settings.yaml provider/model rewrite (tested)
-│   │   ├── components/        # Chat, ToolLog, ContentPanel, Header,
+│   │   ├── components/        # Chat, ContentPanel, Header,
 │   │   │                      # SettingsModal, ProviderPanel, AdvancedPanel
 │   │   └── index.css          # Tailwind import
 │   └── dist/                  # Embedded via go:embed (built by `bun run build`)
@@ -240,7 +245,7 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 | `settings.get` | `{}` | Get current settings.yaml text |
 | `settings.validate` | `{yaml}` | Dry-run validate YAML |
 | `settings.save` | `{yaml}` | Validate + persist + restart sidecar |
-| `auth.status` | `{}` | Providers + auth capabilities + credential status (no secrets) |
+| `auth.status` | `{}` | Providers + auth capabilities + credential status + active provider/model (no secrets) |
 | `auth.login` | `{provider, authType}` | Start a login (OAuth or API-key); responds immediately with `loginId`, progress via `auth.login.*` events |
 | `auth.login.prompt` | `{promptId, value?, cancel?}` | Answer a pending login prompt |
 | `auth.login.cancel` | `{loginId?}` | Abort the in-flight login |
@@ -255,7 +260,7 @@ All messages share the base envelope: `{type, id?, payload, correlationId?, erro
 | `workspace.changed` | No | Workspace changed; payload `{workspace, agents, needsPick}` |
 | `agent.session.reset` | No | New pi session started in place (transcript kept on disk) |
 | `agent.started` | No | Agent session started |
-| `agent.status.changed` | No | Agent status (idle/thinking/streaming/awaiting_approval/error) |
+| `agent.status.changed` | No | Agent status (idle/reasoning/generating/running_tool/awaiting_tool_approval/error) |
 | `agent.message.appended` | No | New message in conversation |
 | `agent.tool.started` | No | Tool call began |
 | `agent.tool.completed` | No | Tool call finished |
@@ -458,10 +463,11 @@ effects. Cleanup must fully undo setup; setup must be safe to run twice.
 ### Components (`frontend/src/components/`)
 - **Header.tsx** — agent name (rename), agents/sessions picker button, new-session button, workspace picker, settings gear.
 - **AgentPicker.tsx** — agent/session browser modal: agents left, sessions right, new-agent + new-session actions.
-- **Chat.tsx** — message list with streaming text; prompt input.
-- **ToolLog.tsx** — tool call timeline (started/completed/pending_approval).
-- **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny) or
-  content doc preview (Markdown). `ApprovalView` has branches per approval kind.
+- **Chat.tsx** — unified railed timeline: messages + tool calls, sticky
+  latest user prompt, inline approval cards, and live/folded thinking.
+- **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny),
+  focused tool-call detail mode, or content doc preview (Markdown).
+  `ApprovalView` has branches per approval kind.
 - **SettingsModal.tsx** — sidebar shell: **Provider** (default) and
   **Advanced** panes; defaults back to Provider on each open.
 - **ProviderPanel.tsx** — structured provider UI: provider dropdown,
@@ -473,10 +479,17 @@ effects. Cleanup must fully undo setup; setup must be safe to run twice.
   → `settings.save`).
 - **AdvancedPanel.tsx** — raw YAML editor with live validation (debounced),
   errors block save, warnings are informational.
-- **Header.tsx** also renders the credential status chip
-  (`useAuthStatus` hook: fetches `auth.status` once, refetches on
-  `settings.changed`); click opens Settings → Provider.
-- **ColumnGrid.tsx** — resizable layout for tool log | chat | content.
+- **ProviderModelPicker.tsx** — header chip showing the live session's
+  `<provider> / <model>`; each half is a quick picker (signed-in providers
+  + "Manage providers…" / the provider's models) that applies via
+  `settings.save`. Driven by `auth.status` (`useAuthStatus` hook: fetches
+  once, refetches on `settings.changed`), so it tracks the live session.
+  Model refs are normalized by `modelRef.ts` (strip provider prefix /
+  `:thinking` suffix; friendly display names).
+- **Header.tsx** renders the picker (`ProviderModelPicker`) next to the
+  settings gear.
+- **ColumnGrid.tsx** — resizable layout for chat | content, with a single
+  handle that can collapse the content pane.
 - **Markdown.tsx** — react-markdown renderer for content docs.
 
 ---

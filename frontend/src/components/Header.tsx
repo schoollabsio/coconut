@@ -4,6 +4,7 @@ import { Cmd } from '../protocol'
 import type { AgentSummary } from '../protocol'
 import { store, useUIState } from '../store'
 import { useAuthStatus } from '../useAuthStatus'
+import { ProviderModelPicker } from './ProviderModelPicker'
 
 /** Header row: agent name + agent/session controls, workspace path (click
  *  to change), settings gear. */
@@ -107,7 +108,7 @@ export function Header({ client }: { client: BackendClient }) {
         </span>
       </button>
       <div className="ml-auto flex items-center gap-1">
-        <AuthProviderChip status={authStatus} onClick={() => store.setSettingsOpen(true)} />
+        <ProviderModelPicker client={client} status={authStatus} />
         <button
           aria-label="Open settings"
           onClick={() => store.setSettingsOpen(true)}
@@ -127,32 +128,3 @@ export function Header({ client }: { client: BackendClient }) {
   )
 }
 
-/** Compact credential indicator: green dot when the active provider has
- *  credentials, dim otherwise. Click opens Settings → Provider. */
-function AuthProviderChip({
-  status,
-  onClick,
-}: {
-  status: ReturnType<typeof useAuthStatus>
-  onClick: () => void
-}) {
-  const active = status?.providers?.find((p) => p.id === status.activeProvider)
-  const configured = !!active?.configured
-  const label = active
-    ? `${active.name || active.id}${configured ? '' : ' — not signed in'}`
-    : 'no provider credentials'
-  return (
-    <button
-      onClick={onClick}
-      title={`${label} — click to manage in Settings → Provider`}
-      className="no-drag flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-surface2 transition-colors"
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full shrink-0 ${configured ? 'bg-accent' : 'bg-faint'}`}
-      />
-      <span className={`font-mono text-[10px] truncate max-w-[16vw] ${configured ? 'text-mute' : 'text-faint'}`}>
-        {active ? active.name || active.id : 'no provider'}
-      </span>
-    </button>
-  )
-}

@@ -81,6 +81,40 @@ func TestEndStreamDropsEmptyText(t *testing.T) {
 	}
 }
 
+// Reasoning-only turns (thinking, then tool calls with no prose) are kept
+// in history so a snapshot/resync shows the same thinking block the live
+// stream did; only truly contentless turns are dropped.
+func TestEndStreamKeepsReasoningOnlyTurn(t *testing.T) {
+	collector := &envelopeCollector{}
+	engine, err := NewEngine(EngineConfig{ConfigDir: t.TempDir(), Emit: collector.emit})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	feedNorm(engine, "message_start", `{}`)
+	feedNorm(engine, "message_update", `{"assistantMessageEvent":{"type":"thinking_delta","delta":"hmm"}}`)
+	feedNorm(engine, "message_end", `{"message":{"role":"assistant","content":[{"type":"toolCall","name":"read"}]}}`)
+
+	if got := len(engine.state.messages); got != 1 {
+		t.Fatalf("expected reasoning-only turn to be kept, got %d messages", got)
+	}
+	m := engine.state.messages[0]
+	if m.Thinking != "hmm" || !m.ThinkingDone || m.Text != "" {
+		t.Fatalf("unexpected kept message: %+v", m)
+	}
+	// Live clients get the finalized message too (carries thinkingMs).
+	if _, _, ok := collector.find(t, func(envType, name string, _ json.RawMessage) bool {
+		return envType == "event" && name == protocol.EvAgentMessage
+	}); !ok {
+		t.Fatal("agent.message not emitted for reasoning-only turn")
+	}
+	// And a resyncing client sees it in the snapshot.
+	snap := engine.state.snapshot()
+	if len(snap.Agent.Messages) != 1 || snap.Agent.Messages[0].Thinking != "hmm" {
+		t.Fatalf("snapshot lost reasoning-only turn: %+v", snap.Agent.Messages)
+	}
+}
+
 // show_content is the ungated display channel: a successful tool end
 // promotes the captured args into the content doc; an errored call does not.
 func TestShowContentPromotion(t *testing.T) {
@@ -287,7 +321,7 @@ func TestApprovedToolEndDoesNotDoubleResolve(t *testing.T) {
 
 // Whitelisted run commands skip the approval bridge entirely (no
 // extension_ui_request), but they still pass what/why in their tool args.
-// Those must be captured at tool_execution_start so the ToolLog can render
+// Those must be captured at tool_execution_start so the chat timeline can render
 // the human-readable description — not just the truncated command label.
 func TestWhitelistedRunCapturesWhatWhy(t *testing.T) {
 	collector := &envelopeCollector{}

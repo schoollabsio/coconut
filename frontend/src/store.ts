@@ -79,8 +79,10 @@ export interface UIState {
   }
   content: ContentDoc | null
   pendingApprovals: ApprovalRequest[]
-  /** Approval currently focused in the content panel (click in tool log). */
+  /** Approval currently focused in the content panel. */
   focusedApprovalId: string | null
+  /** Tool call currently focused in the content panel. */
+  focusedToolCallId: string | null
   /** Raw settings.yaml text; edited in the settings modal. */
   settingsYaml: string | null
   settingsOpen: boolean
@@ -107,6 +109,7 @@ const initialState: UIState = {
   content: null,
   pendingApprovals: [],
   focusedApprovalId: null,
+  focusedToolCallId: null,
   settingsYaml: null,
   settingsOpen: false,
   agentPickerOpen: false,
@@ -186,7 +189,11 @@ export class UIStore {
     this.set({ settingsOpen: open })
   }
   focusApproval(id: string | null) {
-    this.set({ focusedApprovalId: id })
+    this.set({ focusedApprovalId: id, focusedToolCallId: null })
+  }
+
+  focusToolCall(id: string | null) {
+    this.set({ focusedToolCallId: id, focusedApprovalId: null })
   }
 
   // ------------------------------------------------------------------
@@ -278,6 +285,9 @@ export class UIStore {
     this.streamBuffer.clear()
     this.finalized.clear()
     if (snap.windowName) this.windowName = snap.windowName
+    const focusedApprovalId = s.pendingApprovals.some((a) => a.id === this.state.focusedApprovalId)
+      ? this.state.focusedApprovalId
+      : (s.pendingApprovals[0]?.id ?? null)
     this.set({
       connected: true,
       needsWorkspace: !(s.workspace?.path),
@@ -295,9 +305,12 @@ export class UIStore {
       // Reconcile focus against the authoritative list: a stale focus id
       // (e.g. approval resolved while we were disconnected/resyncing)
       // would otherwise block auto-focus of new approvals forever.
-      focusedApprovalId: s.pendingApprovals.some((a) => a.id === this.state.focusedApprovalId)
-        ? this.state.focusedApprovalId
-        : (s.pendingApprovals[0]?.id ?? null),
+      focusedApprovalId,
+      focusedToolCallId: focusedApprovalId
+        ? null
+        : (s.agent.toolCalls.some((c) => c.id === this.state.focusedToolCallId)
+            ? this.state.focusedToolCallId
+            : null),
       settingsYaml: s.settingsYaml,
     })
   }
@@ -355,6 +368,7 @@ export class UIStore {
         this.set({
           pendingApprovals,
           focusedApprovalId: keepFocus ? cur : req.id,
+          focusedToolCallId: null,
           agent: { ...this.state.agent, status: 'awaiting_tool_approval', toolCalls },
         })
         break
@@ -367,6 +381,7 @@ export class UIStore {
             this.state.focusedApprovalId === p?.approvalId
               ? (pendingApprovals[0]?.id ?? null)
               : this.state.focusedApprovalId,
+          focusedToolCallId: null,
           agent: { ...this.state.agent, status: 'reasoning' },
         })
         break
@@ -402,7 +417,7 @@ export class UIStore {
         this.pushNotification('error', (p?.message as string) ?? 'agent sidecar lost')
         break
       case Ev.ContentUpdated:
-        this.set({ content: p as unknown as ContentDoc })
+        this.set({ content: p as unknown as ContentDoc, focusedToolCallId: null })
         break
       case Ev.SettingsChanged:
         this.set({ settingsYaml: (p as unknown as SettingsYAML).yaml })
@@ -473,6 +488,7 @@ export class UIStore {
           agent: { status: 'idle', messages: [], toolCalls: [] },
           pendingApprovals: [],
           focusedApprovalId: null,
+          focusedToolCallId: null,
           content: null,
           expandedGroups: new Set<string>(),
         })
@@ -490,8 +506,14 @@ export class UIStore {
   }
 
   private findPendingToolCall(req: ApprovalRequest): string | undefined {
-    // The tool call that requested this approval is the most recent
-    // running call of the matching kind.
+    // Exact match first: the backend stamps the originating toolCallId.
+    if (req.toolCallId) {
+      const exact = this.state.agent.toolCalls.find((c) => c.id === req.toolCallId)
+      if (exact) return exact.id
+    }
+    // Fallback for legacy events: the most recent running call of the
+    // matching kind. WRONG for parallel same-kind calls (it reverses the
+    // pairing) — only a best effort when toolCallId is absent.
     const want = req.kind === 'bash' ? 'run' : 'propose_edit'
     for (let i = this.state.agent.toolCalls.length - 1; i >= 0; i--) {
       const c = this.state.agent.toolCalls[i]

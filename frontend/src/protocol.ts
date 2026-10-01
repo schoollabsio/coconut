@@ -155,6 +155,7 @@ export const StatusStreaming = 'generating'
 
 export interface ChatMessage {
   id: string
+  seq?: number
   role: 'user' | 'assistant'
   text: string
   streaming?: boolean
@@ -167,6 +168,7 @@ export type ToolCallStatus = 'running' | 'done' | 'error' | 'pending_approval'
 
 export interface ToolCall {
   id: string
+  seq?: number
   tool: string
   label: string
   path?: string
@@ -181,6 +183,8 @@ export interface ApprovalRequest {
   id: string
   kind: 'propose_edit' | 'bash'
   title: string
+  /** Originating tool call — exact match for the call that requested this approval. */
+  toolCallId?: string
   path?: string
   what?: string
   why?: string
@@ -266,6 +270,8 @@ export interface AuthStatusResult {
   providers: AuthProviderStatus[]
   credentials: CredentialInfo[]
   activeProvider?: string
+  /** Raw settings.yaml model: value (may be provider-prefixed or :thinking-suffixed). */
+  activeModel?: string
 }
 
 export interface AuthModel {

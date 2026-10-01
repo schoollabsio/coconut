@@ -110,6 +110,144 @@ html, body, #root {
 .subtle-pulse {
   animation: subtle-pulse 3s ease-in-out infinite;
 }
+
+/* Sticky user prompt in the chat timeline (Gemini-style). */
+.user-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg);
+  padding: 6px 0 12px;
+}
+.user-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.user-bubble {
+  max-width: 85%;
+  border-radius: 1.5rem;
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0.75rem 1rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+/* Rail badges: the rail cell baseline-aligns a zero-width strut with the
+   badge (empty spans baseline on their bottom edge). Shifting the badge
+   down by (half its height − half the font x-height) centers it exactly
+   on the first text line's x-height center, independent of font metrics. */
+.rail-marker-dot {
+  translate: 0 calc(50% - 0.5ex);
+}
+/* The branch badge carries a real glyph, so its baseline comes from the
+   glyph itself — which already centers the badge on the label's x-height
+   center. The dot nudge would double-correct it. */
+.rail-marker-branch {
+  translate: none;
+}
+.assistant-text {
+  color: var(--muted);
+}
+.assistant-text code {
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: ui-monospace, monospace;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+/* Inline approval card in the chat timeline (mockup v8). */
+.approval {
+  border: 1px solid rgba(217, 160, 91, 0.35);
+  background: rgba(217, 160, 91, 0.06);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.approval .k {
+  font-size: 10px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(217, 160, 91, 0.8);
+  margin-bottom: 2px;
+}
+.approval .what {
+  font-size: 15px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.approval .why {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+.approval .command {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.approval .actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.btn-approve {
+  background: var(--success);
+  color: var(--inset);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-approve:hover {
+  filter: brightness(1.1);
+}
+.btn-dismiss {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.btn-dismiss:hover {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.approval .details-link {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--faint);
+  cursor: pointer;
+}
+.approval .details-link:hover {
+  color: var(--dim);
+}
+.approval .hint {
+  font-size: 11px;
+  color: var(--faint);
+  font-style: italic;
+  margin-top: 8px;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

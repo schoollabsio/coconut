@@ -36,9 +36,9 @@ type App struct {
 }
 
 type windowEntry struct {
-	window   application.Window
-	engine   *core.Engine
-	pollStop chan struct{}
+	window     application.Window
+	engine     *core.Engine
+	pollStop   chan struct{}
 	detachOnce sync.Once
 }
 
@@ -179,8 +179,8 @@ func (a *App) RequestSnapshot(ctx context.Context) string {
 // instead of the shared last agent.
 func (a *App) handleWindowNew(ctx context.Context, reqJSON string) string {
 	var env struct {
-		ID  string          `json:"id"`
-		P   json.RawMessage `json:"payload"`
+		ID string          `json:"id"`
+		P  json.RawMessage `json:"payload"`
 	}
 	if err := json.Unmarshal([]byte(reqJSON), &env); err != nil {
 		return notReady("")
@@ -213,13 +213,13 @@ func (a *App) handleWindowNew(ctx context.Context, reqJSON string) string {
 // per-window event filtering on the frontend.
 func windowOptions(title, name string) application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
-		URL:            "/",
-		Name:           name,
-		Title:          title,
-		Width:          1280,
-		Height:         800,
-		MinWidth:       800,
-		MinHeight:      500,
+		URL:              "/",
+		Name:             name,
+		Title:            title,
+		Width:            1280,
+		Height:           800,
+		MinWidth:         800,
+		MinHeight:        500,
 		BackgroundColour: application.NewRGBA(16, 16, 18, 1), // --bg #101012
 		Mac: application.MacWindow{
 			TitleBar: application.MacTitleBarHidden,

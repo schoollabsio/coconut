@@ -64,6 +64,85 @@ func isEvent(name string) func(string, string, json.RawMessage) bool {
 	}
 }
 
+func assertSnapshotTimelineSeqs(t *testing.T, snap protocol.Snapshot) {
+	t.Helper()
+	msgs := snap.State.Agent.Messages
+	calls := snap.State.Agent.ToolCalls
+	for i := range msgs {
+		if msgs[i].Seq <= 0 {
+			t.Fatalf("message %d has no seq: %+v", i, msgs[i])
+		}
+		if i > 0 && msgs[i].Seq <= msgs[i-1].Seq {
+			t.Fatalf("messages not strictly increasing: %+v then %+v", msgs[i-1], msgs[i])
+		}
+	}
+	for i := range calls {
+		if calls[i].Seq <= 0 {
+			t.Fatalf("tool call %d has no seq: %+v", i, calls[i])
+		}
+		if i > 0 && calls[i].Seq <= calls[i-1].Seq {
+			t.Fatalf("tool calls not strictly increasing: %+v then %+v", calls[i-1], calls[i])
+		}
+		if len(msgs) == 0 {
+			continue
+		}
+		var prevMsg *protocol.ChatMessage
+		var nextMsg *protocol.ChatMessage
+		for j := range msgs {
+			if msgs[j].Seq < calls[i].Seq {
+				prevMsg = &msgs[j]
+				continue
+			}
+			if msgs[j].Seq > calls[i].Seq {
+				nextMsg = &msgs[j]
+				break
+			}
+		}
+		if prevMsg == nil || nextMsg == nil {
+			t.Fatalf("tool call %q seq %d is not interleaved between messages: prev=%v next=%v", calls[i].ID, calls[i].Seq, prevMsg, nextMsg)
+		}
+	}
+}
+
+func TestResequenceRestoredTimelineInterleavesToolCalls(t *testing.T) {
+	s := newDomainState()
+	// User messages get seqs, but tool-call groups are attached only to
+	// the k-th assistant turn that produced them.
+	s.messages = []protocol.ChatMessage{
+		{ID: "m1", Role: "user", Text: "one"},
+		{ID: "m2", Role: "assistant", Text: "two"},
+		{ID: "m3", Role: "assistant", Text: "three"},
+	}
+	s.restoredToolCalls = []restoredToolCall{
+		{call: protocol.ToolCall{ID: "t1", Tool: "read"}, messageOrdinal: 1},
+		{call: protocol.ToolCall{ID: "t2", Tool: "write"}, messageOrdinal: 1},
+		{call: protocol.ToolCall{ID: "t3", Tool: "show_content"}, messageOrdinal: 2},
+		{call: protocol.ToolCall{ID: "orph", Tool: "read"}, messageOrdinal: 0},
+	}
+
+	s.resequenceRestoredTimeline()
+
+	wantSeq := map[string]int64{
+		"m1":   1,
+		"m2":   2,
+		"t1":   3,
+		"t2":   4,
+		"m3":   5,
+		"t3":   6,
+		"orph": 7,
+	}
+	for _, m := range s.messages {
+		if got := m.Seq; got != wantSeq[m.ID] {
+			t.Fatalf("message %s seq = %d, want %d", m.ID, got, wantSeq[m.ID])
+		}
+	}
+	for _, tc := range s.toolCalls {
+		if got := tc.Seq; got != wantSeq[tc.ID] {
+			t.Fatalf("tool call %s seq = %d, want %d", tc.ID, got, wantSeq[tc.ID])
+		}
+	}
+}
+
 // buildFakepi compiles cmd/fakepi into a temp binary.
 func buildFakepi(t *testing.T) string {
 	t.Helper()
@@ -147,6 +226,24 @@ func TestEngineAgainstFakepi(t *testing.T) {
 		t.Fatal("no token stream observed")
 	}
 
+	// Snapshot mid-stream: the synthesized assistant message must get the
+	// next seq so the conversation stays chronologically ordered even
+	// before message_end lands.
+	var streamingSnap protocol.Snapshot
+	if err := json.Unmarshal(engine.RequestSnapshot(), &streamingSnap); err != nil {
+		t.Fatalf("mid-stream snapshot: %v", err)
+	}
+	if len(streamingSnap.State.Agent.Messages) < 2 {
+		t.Fatalf("mid-stream snapshot missing assistant stream: %+v", streamingSnap.State.Agent.Messages)
+	}
+	last := streamingSnap.State.Agent.Messages[len(streamingSnap.State.Agent.Messages)-1]
+	if !last.Streaming {
+		t.Fatalf("mid-stream snapshot did not synthesize streaming message: %+v", streamingSnap.State.Agent.Messages)
+	}
+	if last.Seq <= streamingSnap.State.Agent.Messages[len(streamingSnap.State.Agent.Messages)-2].Seq {
+		t.Fatalf("streaming snapshot seq order broken: %+v", streamingSnap.State.Agent.Messages)
+	}
+
 	// Approval request for the propose_edit, with a computed diff.
 	apprPayload, ok := collector.waitFor(t, 10*time.Second, "approval.requested", isEvent(protocol.EvApprovalRequested))
 	if !ok {
@@ -158,6 +255,9 @@ func TestEngineAgainstFakepi(t *testing.T) {
 	}
 	if appr.Kind != protocol.ApprovalKindProposeEdit || appr.Path == "" || appr.What == "" || appr.Diff == "" {
 		t.Fatalf("incomplete approval request: %+v", appr)
+	}
+	if appr.ToolCallID == "" {
+		t.Fatalf("approval request missing toolCallId: %+v", appr)
 	}
 
 	// 3. Approve it; the run completes.
@@ -183,6 +283,7 @@ func TestEngineAgainstFakepi(t *testing.T) {
 	if snap.State.Agent.Status != protocol.StatusIdle {
 		t.Errorf("snapshot status = %q", snap.State.Agent.Status)
 	}
+	assertSnapshotTimelineSeqs(t, snap)
 	if len(snap.State.PendingApprovals) != 0 {
 		t.Errorf("pending approvals not cleared: %+v", snap.State.PendingApprovals)
 	}
@@ -418,6 +519,7 @@ func TestSessionRestoresToolCalls(t *testing.T) {
 	if !waitToolCalls(snap1) {
 		t.Fatalf("phase 1: missing tool calls: %+v", snap1.State.Agent.ToolCalls)
 	}
+	assertSnapshotTimelineSeqs(t, snap1)
 	if snap1.State.Content == nil || snap1.State.Content.Path != "content.md" || snap1.State.Content.Content == "" {
 		t.Fatalf("phase 1: missing content doc: %+v", snap1.State.Content)
 	}
@@ -454,6 +556,7 @@ func TestSessionRestoresToolCalls(t *testing.T) {
 	if !waitToolCalls(snap2) {
 		t.Fatalf("phase 2: tool calls not restored: %+v", snap2.State.Agent.ToolCalls)
 	}
+	assertSnapshotTimelineSeqs(t, snap2)
 	if snap2.State.Content == nil || snap2.State.Content.Path != "content.md" || snap2.State.Content.Content == "" {
 		t.Fatalf("phase 2: content not restored: %+v", snap2.State.Content)
 	}
@@ -576,7 +679,10 @@ func TestBootSpecTwoEngines(t *testing.T) {
 	collectorB.mu.Lock()
 	var firstSeq uint64
 	for _, raw := range collectorB.envs {
-		var head struct{ Type string `json:"type"`; Seq uint64 `json:"seq"` }
+		var head struct {
+			Type string `json:"type"`
+			Seq  uint64 `json:"seq"`
+		}
 		_ = json.Unmarshal(raw, &head)
 		if head.Type == "event" && (firstSeq == 0 || head.Seq < firstSeq) {
 			firstSeq = head.Seq

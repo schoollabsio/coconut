@@ -47,9 +47,9 @@ func (e *Engine) startLoginHelperLocked() error {
 	go func() {
 		<-client.Exited()
 		select {
-			case e.inbox <- loginGoneInput{err: client.ExitErr()}:
-			case <-e.done:
-			}
+		case e.inbox <- loginGoneInput{err: client.ExitErr()}:
+		case <-e.done:
+		}
 	}()
 	return nil
 }
@@ -257,6 +257,7 @@ func (e *Engine) cmdAuthStatus(cmd protocol.Command, respond chan []byte) {
 			Providers:      providers,
 			Credentials:    hr.Credentials,
 			ActiveProvider: e.state.settings.Provider,
+			ActiveModel:    e.state.settings.Model,
 		})
 	})
 }
@@ -329,17 +330,17 @@ func (e *Engine) cmdAuthLogin(cmd protocol.Command, respond chan []byte) {
 			e.activeLoginID = ""
 			e.activeLoginProvider = ""
 			switch {
-		case err != nil:
-			e.emitEvent(protocol.EvAuthLoginFailed, map[string]any{"loginId": loginID, "message": err.Error()}, "")
-		case resp.Type == "done":
-			e.emitEvent(protocol.EvAuthLoginCompleted, map[string]any{"loginId": loginID, "provider": p.Provider}, "")
-			e.notify("info", "Signed in to "+p.Provider)
-			e.restartSidecarForAuth()
-		case resp.Type == "cancelled":
-			e.emitEvent(protocol.EvAuthLoginCancelled, map[string]any{"loginId": loginID, "message": resp.Message}, "")
-		default:
-			e.emitEvent(protocol.EvAuthLoginFailed, map[string]any{"loginId": loginID, "message": errString(err, resp.Message)}, "")
-		}
+			case err != nil:
+				e.emitEvent(protocol.EvAuthLoginFailed, map[string]any{"loginId": loginID, "message": err.Error()}, "")
+			case resp.Type == "done":
+				e.emitEvent(protocol.EvAuthLoginCompleted, map[string]any{"loginId": loginID, "provider": p.Provider}, "")
+				e.notify("info", "Signed in to "+p.Provider)
+				e.restartSidecarForAuth()
+			case resp.Type == "cancelled":
+				e.emitEvent(protocol.EvAuthLoginCancelled, map[string]any{"loginId": loginID, "message": resp.Message}, "")
+			default:
+				e.emitEvent(protocol.EvAuthLoginFailed, map[string]any{"loginId": loginID, "message": errString(err, resp.Message)}, "")
+			}
 		})
 
 	respond <- respondOK(cmd, map[string]any{"loginId": loginID, "provider": p.Provider, "authType": authType})

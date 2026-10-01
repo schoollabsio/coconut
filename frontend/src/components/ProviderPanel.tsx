@@ -11,7 +11,8 @@ import {
   type SettingsValidateResult,
 } from '../protocol'
 import { store, useUIState, type AuthLoginFlow } from '../store'
-import { withProviderModel } from '../yamlPatch'
+import { stripModelRef } from '../modelRef'
+import { readProviderModel, withProviderModel } from '../yamlPatch'
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -54,10 +55,16 @@ export function ProviderPanel({ client }: { client: BackendClient }) {
         if (resp.ok && resp.payload) {
           store.setAuthStatus(resp.payload)
           setStatusError(null)
-          // Default the selection to the active provider, once.
+          // Default the selection to the active provider, once — and seed
+          // the model from the saved settings so the dropdown reflects what
+          // the session is actually running.
           if (!defaulted.current && resp.payload.activeProvider) {
             defaulted.current = true
             setProvider(resp.payload.activeProvider)
+            const saved = readProviderModel(store.state.settingsYaml ?? '')
+            if (saved.provider === resp.payload.activeProvider && saved.model) {
+              setModel(stripModelRef(saved.model, saved.provider))
+            }
           }
         } else {
           setStatusError(resp.error?.message ?? 'failed to load provider status')
@@ -337,7 +344,7 @@ export function ProviderPanel({ client }: { client: BackendClient }) {
         <section>
           <div className="flex items-baseline justify-between">
             <Label>Model</Label>
-            {provider === activeId && !model && <span className="text-[10px] text-faint">blank = provider default</span>}
+            {!model && models.length > 0 && <span className="text-[10px] text-warn">pick a model to apply</span>}
           </div>
           <div className="relative mt-1.5">
             <select
@@ -346,7 +353,9 @@ export function ProviderPanel({ client }: { client: BackendClient }) {
               disabled={models.length === 0 && !selected?.configured}
               className="w-full appearance-none rounded-lg border border-line bg-base px-3 py-2 text-xs text-ink outline-none focus:border-accent/60 disabled:opacity-50"
             >
-              <option value="">provider default</option>
+              <option value="" disabled>
+                choose a model…
+              </option>
               {models.map((m) => (
                 <option key={`${m.provider}/${m.id}`} value={m.id}>
                   {m.id}
@@ -357,7 +366,7 @@ export function ProviderPanel({ client }: { client: BackendClient }) {
             <Chevron />
           </div>
           {models.length === 0 && selected?.configured && (
-            <p className="mt-1.5 text-[10px] text-faint">no models listed — leave as default</p>
+            <p className="mt-1.5 text-[10px] text-faint">no models listed — applying leaves the model unset</p>
           )}
           {models.length === 0 && !selected?.configured && (
             <p className="mt-1.5 text-[10px] text-faint">sign in to list available models</p>
@@ -372,7 +381,7 @@ export function ProviderPanel({ client }: { client: BackendClient }) {
           {applyError && <span className="text-[11px] text-danger">{applyError}</span>}
           <button
             onClick={() => void apply()}
-            disabled={!provider || applyBusy || (flow !== null && flow.result === null)}
+            disabled={!provider || applyBusy || (flow !== null && flow.result === null) || (models.length > 0 && !model)}
             className="px-4 py-1.5 rounded-lg text-xs bg-accent hover:bg-accenthover text-onaccent transition-colors disabled:opacity-50"
           >
             {applyBusy ? 'Applying…' : 'Apply'}

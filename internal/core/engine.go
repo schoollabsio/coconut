@@ -37,7 +37,7 @@ type EngineConfig struct {
 	SelfPath      string                 // os.Executable(), for sidecar resolution
 	PickDir       func() (string, error) // native directory dialog
 	Emit          func(env any)
-	Boot          *BootSpec              // optional one-shot bootstrap target
+	Boot          *BootSpec // optional one-shot bootstrap target
 }
 
 // Engine is the backend orchestrator. All state mutation happens on the
@@ -117,16 +117,16 @@ type flushInput struct{}
 type shutdownInput struct{}
 type windowStateInput struct{ fullscreen bool }
 
-func (cmdInput) coreInput()      {}
-func (snapshotInput) coreInput() {}
-func (piEventInput) coreInput()  {}
-func (piGoneInput) coreInput()   {}
-func (piRespInput) coreInput()   {}
-func (loginEventInput) coreInput() {}
-func (loginGoneInput) coreInput()  {}
-func (loginRespInput) coreInput()  {}
-func (flushInput) coreInput()    {}
-func (shutdownInput) coreInput() {}
+func (cmdInput) coreInput()         {}
+func (snapshotInput) coreInput()    {}
+func (piEventInput) coreInput()     {}
+func (piGoneInput) coreInput()      {}
+func (piRespInput) coreInput()      {}
+func (loginEventInput) coreInput()  {}
+func (loginGoneInput) coreInput()   {}
+func (loginRespInput) coreInput()   {}
+func (flushInput) coreInput()       {}
+func (shutdownInput) coreInput()    {}
 func (windowStateInput) coreInput() {}
 
 // NewEngine loads settings and prepares state; no sidecar yet.
