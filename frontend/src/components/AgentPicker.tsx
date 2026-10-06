@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BackendClient } from '../backend'
-import { Cmd } from '../protocol'
+import { relativeTime, formatBytes } from '../format'
+import { Cmd, type AgentPromptResult } from '../protocol'
 import { store, useUIState } from '../store'
 
 /** Agent/session picker: shown after opening a workspace that has agents,
@@ -14,6 +15,34 @@ export function AgentPicker({ client }: { client: BackendClient }) {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [busy, setBusy] = useState(false)
+  // Custom system prompt editing (for the selected agent).
+  const [promptOpen, setPromptOpen] = useState(false)
+  const [promptDraft, setPromptDraft] = useState('')
+  const [promptSaved, setPromptSaved] = useState('')
+  const [promptLoaded, setPromptLoaded] = useState(false)
+
+  const selectedSlugEff = agents.find((a) => a.slug === selectedSlug)?.slug ?? agents[0]?.slug ?? null
+
+  // Lazy-load the selected agent's prompt when the section is expanded.
+  useEffect(() => {
+    if (!open || !promptOpen || !selectedSlugEff) return
+    let cancelled = false
+    setPromptLoaded(false)
+    void client.command<AgentPromptResult>(Cmd.AgentPromptGet, { slug: selectedSlugEff }).then((resp) => {
+      if (cancelled) return
+      if (resp.ok) {
+        const text = resp.payload?.prompt ?? ''
+        setPromptDraft(text)
+        setPromptSaved(text)
+      } else {
+        store.pushNotification('error', resp.error?.message ?? 'failed to load system prompt')
+      }
+      setPromptLoaded(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, promptOpen, selectedSlugEff, client])
 
   if (!open) return null
 
@@ -56,6 +85,25 @@ export function AgentPicker({ client }: { client: BackendClient }) {
     }
   }
 
+  const savePrompt = async (text: string) => {
+    if (!selectedSlugEff) return
+    setBusy(true)
+    try {
+      const resp = await client.command<AgentPromptResult>(Cmd.AgentPromptSet, { slug: selectedSlugEff, prompt: text })
+      if (resp.ok) {
+        const saved = resp.payload?.prompt ?? ''
+        setPromptDraft(saved)
+        setPromptSaved(saved)
+        store.setAgentHasPrompt(selectedSlugEff, saved !== '')
+        store.pushNotification('info', saved ? 'System prompt saved — applies to the next message' : 'System prompt cleared')
+      } else {
+        store.pushNotification('error', resp.error?.message ?? 'failed to save system prompt')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-base/70"
@@ -93,6 +141,9 @@ export function AgentPicker({ client }: { client: BackendClient }) {
                   <span className="text-sm text-ink truncate">{a.name}</span>
                   {a.slug === currentSlug && (
                     <span className="shrink-0 text-[10px] uppercase tracking-wide text-ok">open</span>
+                  )}
+                  {a.hasSystemPrompt && (
+                    <span title="Has a custom system prompt" className="shrink-0 w-1.5 h-1.5 rounded-full bg-accent" />
                   )}
                   <button
                     aria-label={`Open ${a.name} in a new window`}
@@ -136,6 +187,60 @@ export function AgentPicker({ client }: { client: BackendClient }) {
           <div className="overflow-y-auto">
             {selected && (
               <>
+                <div className="border-b border-line">
+                  <button
+                    onClick={() => setPromptOpen((v) => !v)}
+                    aria-expanded={promptOpen}
+                    className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-mute hover:text-ink transition-colors"
+                  >
+                    <svg
+                      className={`w-3 h-3 transition-transform ${promptOpen ? 'rotate-90' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                    System prompt
+                    {selected.hasSystemPrompt && (
+                      <span title="This agent has custom instructions" className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                    )}
+                  </button>
+                  {promptOpen && (
+                    <div className="px-3 pb-3">
+                      <textarea
+                        value={promptDraft}
+                        onChange={(e) => setPromptDraft(e.target.value)}
+                        placeholder={promptLoaded ? 'Custom instructions for this agent (optional)…' : 'Loading…'}
+                        disabled={!promptLoaded || busy}
+                        rows={5}
+                        spellCheck={false}
+                        aria-label="Custom system prompt"
+                        className="w-full bg-surface2 text-xs text-ink rounded-md px-2 py-1.5 border border-linestrong focus:border-linestrong outline-none resize-y font-mono"
+                      />
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <button
+                          onClick={() => void savePrompt(promptDraft)}
+                          disabled={busy || !promptLoaded || promptDraft.trim() === promptSaved}
+                          className="text-xs px-2 py-1 rounded-md bg-surface2 text-ink hover:bg-raised disabled:opacity-40"
+                        >
+                          Save
+                        </button>
+                        {promptSaved !== '' && (
+                          <button
+                            onClick={() => void savePrompt('')}
+                            disabled={busy}
+                            className="text-xs px-2 py-1 rounded-md bg-surface2 text-mute hover:bg-raised disabled:opacity-40"
+                          >
+                            Clear
+                          </button>
+                        )}
+                        <span className="text-[10px] text-faint">applies to this agent's next message — no restart needed</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="sticky top-0 bg-surface px-3 py-2 border-b border-line">
                   <button
                     onClick={() => void openAgent({ slug: selected.slug, new: true })}
@@ -183,24 +288,4 @@ export function AgentPicker({ client }: { client: BackendClient }) {
       </div>
     </div>
   )
-}
-
-function relativeTime(iso: string): string {
-  const t = Date.parse(iso)
-  if (Number.isNaN(t)) return iso
-  const delta = Date.now() - t
-  const min = Math.floor(delta / 60000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
-  const h = Math.floor(min / 60)
-  if (h < 24) return `${h}h ago`
-  const d = Math.floor(h / 24)
-  if (d < 7) return `${d}d ago`
-  return new Date(t).toLocaleDateString()
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }

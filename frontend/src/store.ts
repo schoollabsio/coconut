@@ -22,6 +22,8 @@ import type {
   BackendMessage,
   ChatMessage,
   ContentDoc,
+  ContentEntry,
+  ContentLibraryPayload,
   SettingsYAML,
   SnapshotMessage,
   StreamMessage,
@@ -78,11 +80,16 @@ export interface UIState {
     toolCalls: ToolCall[]
   }
   content: ContentDoc | null
+  /** The agent's persisted content library (snapshot + content.library.changed), newest first. */
+  contentLibrary: ContentEntry[]
   pendingApprovals: ApprovalRequest[]
   /** Approval currently focused in the content panel. */
   focusedApprovalId: string | null
   /** Tool call currently focused in the content panel. */
   focusedToolCallId: string | null
+  /** User explicitly pinned the panel to a library entry: content beats the
+   *  pending-approval fallback until focus moves or a new approval lands. */
+  contentPinned: boolean
   /** Raw settings.yaml text; edited in the settings modal. */
   settingsYaml: string | null
   settingsOpen: boolean
@@ -107,9 +114,11 @@ const initialState: UIState = {
   isFullscreen: false,
   agent: { status: 'idle', messages: [], toolCalls: [] },
   content: null,
+  contentLibrary: [],
   pendingApprovals: [],
   focusedApprovalId: null,
   focusedToolCallId: null,
+  contentPinned: false,
   settingsYaml: null,
   settingsOpen: false,
   agentPickerOpen: false,
@@ -185,15 +194,27 @@ export class UIStore {
     this.set({ agentPickerOpen: false })
     this.notify()
   }
+  /** Update an agent's hasSystemPrompt badge locally after a save/clear. */
+  setAgentHasPrompt(slug: string, has: boolean) {
+    this.set({
+      agentList: this.state.agentList.map((a) => (a.slug === slug ? { ...a, hasSystemPrompt: has } : a)),
+    })
+  }
   setSettingsOpen(open: boolean) {
     this.set({ settingsOpen: open })
   }
   focusApproval(id: string | null) {
-    this.set({ focusedApprovalId: id, focusedToolCallId: null })
+    this.set({ focusedApprovalId: id, focusedToolCallId: null, contentPinned: false })
   }
 
   focusToolCall(id: string | null) {
-    this.set({ focusedToolCallId: id, focusedApprovalId: null })
+    this.set({ focusedToolCallId: id, focusedApprovalId: null, contentPinned: false })
+  }
+
+  /** Pin the panel to a content-library entry (user-driven). The entry's
+   *  document arrives via content.updated after the content.select command. */
+  pinContent() {
+    this.set({ contentPinned: true, focusedApprovalId: null, focusedToolCallId: null })
   }
 
   // ------------------------------------------------------------------
@@ -301,6 +322,9 @@ export class UIStore {
         toolCalls: [...s.agent.toolCalls],
       },
       content: s.content,
+      contentLibrary: s.contentLibrary ?? [],
+      // A pin survives resync only while its document is still there.
+      contentPinned: this.state.contentPinned && s.content != null,
       pendingApprovals: [...s.pendingApprovals],
       // Reconcile focus against the authoritative list: a stale focus id
       // (e.g. approval resolved while we were disconnected/resyncing)
@@ -369,6 +393,7 @@ export class UIStore {
           pendingApprovals,
           focusedApprovalId: keepFocus ? cur : req.id,
           focusedToolCallId: null,
+          contentPinned: false, // a new approval is an attention magnet
           agent: { ...this.state.agent, status: 'awaiting_tool_approval', toolCalls },
         })
         break
@@ -416,9 +441,23 @@ export class UIStore {
       case Ev.SidecarLost:
         this.pushNotification('error', (p?.message as string) ?? 'agent sidecar lost')
         break
-      case Ev.ContentUpdated:
-        this.set({ content: p as unknown as ContentDoc, focusedToolCallId: null })
+      case Ev.ContentUpdated: {
+        const doc = (p as unknown as ContentDoc | null) ?? null
+        this.set({
+          content: doc,
+          focusedToolCallId: null,
+          // Fresh agent output shows itself unless an approval is pending
+          // (the panel's pending chip signals it instead). A null doc
+          // (agent reset) clears the pin.
+          contentPinned: doc == null ? false : this.state.pendingApprovals.length === 0 ? true : this.state.contentPinned,
+        })
         break
+      }
+      case Ev.ContentLibraryChanged: {
+        const lp = p as unknown as ContentLibraryPayload | undefined
+        this.set({ contentLibrary: lp?.entries ?? [] })
+        break
+      }
       case Ev.SettingsChanged:
         this.set({ settingsYaml: (p as unknown as SettingsYAML).yaml })
         break
@@ -489,7 +528,9 @@ export class UIStore {
           pendingApprovals: [],
           focusedApprovalId: null,
           focusedToolCallId: null,
+          contentPinned: false,
           content: null,
+          // contentLibrary survives: it is per-agent, not per-session.
           expandedGroups: new Set<string>(),
         })
         break

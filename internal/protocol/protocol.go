@@ -86,11 +86,14 @@ const (
 	CmdAgentRename      = "agent.rename"
 	CmdAgentReset       = "agent.reset"    // new underlying pi session, same agent
 	CmdAgentList        = "agent.list"     // scan workspace agents + sessions
+	CmdAgentPromptGet   = "agent.prompt.get" // read an agent's custom system prompt
+	CmdAgentPromptSet   = "agent.prompt.set" // write (or clear) an agent's custom system prompt
 	CmdWorkspacePick    = "workspace.pick" // opens native dir picker
 	CmdWorkspaceSet     = "workspace.set"
 	CmdAgentStart       = "agent.start"
 	CmdAgentCancel      = "agent.cancel"
 	CmdApprovalRespond  = "agent.approval.respond"
+	CmdContentSelect    = "content.select" // display a content-library entry
 	CmdSettingsGet      = "settings.get"
 	CmdSettingsSave     = "settings.save"
 	CmdSettingsValidate = "settings.validate"
@@ -126,10 +129,12 @@ const (
 	EvAgentFailed            = "agent.failed"
 	EvSidecarLost            = "agent.sidecar.lost"
 	EvContentUpdated         = "content.updated"
+	EvContentLibraryChanged  = "content.library.changed" // library entries added/updated (ContentLibraryPayload)
 	EvWindowStateChanged     = "window.state.changed"
 	EvSettingsChanged        = "settings.changed"
 	EvNotification           = "notification.created"
 	EvAgentThinkingCompleted = "agent.thinking.completed"
+	EvAgentPromptChanged     = "agent.prompt.changed" // custom system prompt saved/cleared
 
 	// Auth login flow (all carry a loginId; the frontend renders the
 	// steps as they arrive).
@@ -166,12 +171,33 @@ type AgentOpenPayload struct {
 	New         bool   `json:"new,omitempty"`
 }
 
+// AgentPromptGetPayload reads one agent's custom system prompt.
+type AgentPromptGetPayload struct {
+	Slug string `json:"slug"`
+}
+
+// AgentPromptSetPayload writes an agent's custom system prompt; an empty
+// prompt clears it (the file is removed).
+type AgentPromptSetPayload struct {
+	Slug   string `json:"slug"`
+	Prompt string `json:"prompt"`
+}
+
+// AgentPromptResult is the agent.prompt.get / agent.prompt.set payload.
+type AgentPromptResult struct {
+	Slug   string `json:"slug"`
+	Prompt string `json:"prompt"`
+}
+
 // AgentSummary is one agent in a workspace scan.
 type AgentSummary struct {
 	Slug     string           `json:"slug"`
 	Name     string           `json:"name"`
 	Current  bool             `json:"current"`
 	Sessions []SessionSummary `json:"sessions"`
+	// HasSystemPrompt marks agents with a custom system-prompt.md on disk;
+	// the picker badges them without loading every prompt file.
+	HasSystemPrompt bool `json:"hasSystemPrompt,omitempty"`
 }
 
 // SessionSummary is one transcript in a workspace scan.
@@ -210,6 +236,27 @@ const (
 type ApprovalRespondPayload struct {
 	ApprovalID string `json:"approvalId"`
 	Decision   string `json:"decision"` // DecisionAllow | DecisionDismiss
+}
+
+// ContentSelectPayload picks a content-library entry to display.
+type ContentSelectPayload struct {
+	Name string `json:"name"`
+}
+
+// ContentEntry is one persisted document in an agent's content library
+// (<workspace>/.coconut/agents/<slug>/content/). Name is the entry's id
+// (the file name within the dir); UpdatedAt drives most-recent-first sort.
+type ContentEntry struct {
+	Name      string `json:"name"`
+	Format    string `json:"format"` // "markdown" | "html", derived from the file extension
+	SizeBytes int64  `json:"sizeBytes"`
+	UpdatedAt int64  `json:"updatedAt"` // unix ms
+}
+
+// ContentLibraryPayload carries the full entry list on
+// content.library.changed (small; wholesale replace beats deltas).
+type ContentLibraryPayload struct {
+	Entries []ContentEntry `json:"entries"`
 }
 
 // SettingsYAMLPayload carries the raw settings.yaml text. The frontend
@@ -417,6 +464,9 @@ type ContentDoc struct {
 	Content   string `json:"content"`
 	Format    string `json:"format"`    // "markdown" (default) | "html"
 	UpdatedAt int64  `json:"updatedAt"` // unix ms
+	// SourcePath records the project file a Mode B (file) entry was
+	// snapshotted from; empty for composed documents.
+	SourcePath string `json:"sourcePath,omitempty"`
 }
 
 type WorkspaceInfo struct {
@@ -437,6 +487,7 @@ type SnapshotState struct {
 	Workspace        WorkspaceInfo     `json:"workspace"`
 	Agent            AgentState        `json:"agent"`
 	Content          *ContentDoc       `json:"content"`
+	ContentLibrary   []ContentEntry    `json:"contentLibrary,omitempty"`
 	PendingApprovals []ApprovalRequest `json:"pendingApprovals"`
 	SettingsYAML     string            `json:"settingsYaml"`
 }

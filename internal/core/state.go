@@ -22,7 +22,11 @@ type domainState struct {
 	messages    []protocol.ChatMessage
 	toolCalls   []protocol.ToolCall
 	content     *protocol.ContentDoc
-	approvals   []protocol.ApprovalRequest
+	// contentLibrary caches the agent's content-dir scan (newest first).
+	// Cleared by resetAgent; every sidecar (re)start and agent.reset
+	// rescans it from disk.
+	contentLibrary []protocol.ContentEntry
+	approvals      []protocol.ApprovalRequest
 
 	// streaming assistant message assembly
 	streamMsgID string
@@ -83,6 +87,7 @@ func (s *domainState) resetAgent() {
 	s.messages = nil
 	s.toolCalls = nil
 	s.approvals = nil
+	s.contentLibrary = nil
 	s.streamMsgID = ""
 	s.streamText = ""
 	s.streaming = false
@@ -129,12 +134,15 @@ func (s *domainState) snapshot() protocol.SnapshotState {
 		c := *s.content
 		content = &c
 	}
+	library := make([]protocol.ContentEntry, len(s.contentLibrary))
+	copy(library, s.contentLibrary)
 	return protocol.SnapshotState{
 		AgentName:        s.agentName,
 		AgentSlug:        s.agentSlug,
 		Workspace:        s.workspaceInfo(),
 		Agent:            protocol.AgentState{Status: s.agentStatus, Messages: msgs, ToolCalls: calls},
 		Content:          content,
+		ContentLibrary:   library,
 		PendingApprovals: appr,
 		SettingsYAML:     s.settingsRaw,
 	}

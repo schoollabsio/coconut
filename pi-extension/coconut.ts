@@ -21,24 +21,26 @@
  *   1. propose_edit tool — the ONLY way the agent can create/modify files
  *      (built-in edit/write are not in --tools). Gated on user approval.
  *   2. show_content tool — ungated display channel into the app's content
- *      panel. Mode A (path+content): render a composed document, staged
- *      OUTSIDE the workspace so it can never create/modify project files.
- *      Mode B (file): render an existing file read directly from disk.
- *      Read-only in both modes.
+ *      panel. Mode A (path+content): render a composed document. Mode B
+ *      (file): render an existing file read directly from disk. The tool
+ *      itself writes nothing; the backend persists shown documents into
+ *      the agent's content library (.coconut/agents/<slug>/content/) so
+ *      every session of the agent can re-open them.
  *   3. run tool — replaces the built-in bash tool with a registered tool that
  *      requires what/why; whitelisted commands run without approval, others
  *      open the coconut://run approval dialog.
  *   4. tool_call hook hard-blocking built-in edit/write/apply_patch if a pi
  *      build ever activates them despite --tools.
- *   5. before_agent_start — appends "Coconut environment" system-prompt guidance.
+ *   5. before_agent_start — appends the agent's custom system prompt
+ *      (COCONUT_SYSTEM_PROMPT_FILE, re-read every prompt) plus the
+ *      "Coconut environment" guidance.
  *   6. project_trust — always "no": the app isolates the agent from
  *      project-local pi settings/extensions.
  */
 
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import {
 	type ExtensionAPI,
 	withFileMutationQueue,
@@ -78,8 +80,17 @@ const ProposeEditParamsSchema = Type.Object({
 export type ProposeEditParams = Static<typeof ProposeEditParamsSchema>;
 
 const ShowContentParamsSchema = Type.Object({
-	path: Type.String({ description: 'Document file name, e.g. "report.md" (staged outside the project tree).' }),
-	content: Type.String({ description: "Full document content (usually Markdown)." }),
+	path: Type.Optional(
+	Type.String({
+		description: 'Document file name, e.g. "report.md". Becomes an entry in the agent\'s content library.',
+	}),
+	),
+	content: Type.Optional(
+		Type.String({ description: "Full document content (usually Markdown). Required unless file is set." }),
+	),
+	file: Type.Optional(
+		Type.String({ description: "Path of an existing file to display (read directly from disk — no content needed)." }),
+	),
 	what: Type.String({ description: "Short summary of what this document conveys (shown to the user)." }),
 	why: Type.String({ description: "Rationale for why this document is being shown (shown to the user)." }),
 	groupLabel: Type.String({
@@ -209,24 +220,6 @@ function isWhitelistedCommand(command: string, bashWhitelist: string[]): boolean
 	return true;
 }
 
-// show_content stages documents here — inside pi's agent dir, which coconut
-// sets to its own isolated config dir — so the ungated render channel can
-// never write into the user's project.
-const CONTENT_STAGING = join(process.env.PI_CODING_AGENT_DIR ?? tmpdir(), "content");
-
-// Resolve a model-supplied document name into the staging dir, refusing
-// anything that would escape it (absolute paths, drive letters, "..").
-function stagingPath(name: string): string {
-	const cleaned = cleanPath(name).replace(/^([A-Za-z]:)?[\\/]+/, "");
-	const parts = cleaned.split(/[\\/]+/).filter((p) => p !== "" && p !== "." && p !== "..");
-	if (parts.length === 0) parts.push("content.md");
-	const abs = resolve(CONTENT_STAGING, parts.join(sep));
-	if (abs !== CONTENT_STAGING && !abs.startsWith(CONTENT_STAGING + sep)) {
-		return join(CONTENT_STAGING, "content.md");
-	}
-	return abs;
-}
-
 // ---------------------------------------------------------------------------
 // Bash gating
 // ---------------------------------------------------------------------------
@@ -296,6 +289,13 @@ const execAsync = promisify(exec);
 // ---------------------------------------------------------------------------
 // System-prompt guidance
 // ---------------------------------------------------------------------------
+
+// Per-agent custom instructions: the backend points
+// COCONUT_SYSTEM_PROMPT_FILE at <agent-dir>/system-prompt.md. The hook below
+// fires per user prompt and re-reads the file each time, so edits apply to
+// the next message with no sidecar restart. Pathological sizes are ignored
+// rather than bloating the context window.
+const MAX_CUSTOM_PROMPT_CHARS = 64 * 1024;
 
 const COCONUT_GUIDANCE = `## Coconut environment
 
@@ -450,8 +450,9 @@ export default function (pi: ExtensionAPI) {
 
 	// -----------------------------------------------------------------------
 	// 2. show_content — display channel into the app's content panel.
-	//    Ungated: it only displays a document; the staged copy lives outside
-	//    the project tree so nothing the user works on is mutated.
+	//    Ungated: it only displays a document and writes nothing itself;
+	//    the backend persists shown documents into the agent's content
+	//    library (.coconut/agents/<slug>/content/).
 	// -----------------------------------------------------------------------
 
 	pi.registerTool({
@@ -468,24 +469,26 @@ export default function (pi: ExtensionAPI) {
 		prepareArguments(args) {
 			if (!args || typeof args !== "object") return args;
 			const input = args as Record<string, unknown>;
-			if (!input.what) input.what = `Display document ${input.path ?? "content"}`;
+			if (!input.what) input.what = `Display document ${input.path ?? input.file ?? "content"}`;
 			if (!input.why) input.why = "Showing content to the user as requested";
 			if (!input.groupLabel) input.groupLabel = "_default";
 			if (!input.format) input.format = "markdown";
 			return input;
 		},
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			const absPath = stagingPath(params.path);
-			await withFileMutationQueue(absPath, async () => {
-				await mkdir(dirname(absPath), { recursive: true });
-				await writeFile(absPath, params.content, "utf8");
-			});
-
+			// Nothing to stage: the backend renders from these args — Mode A
+			// (path+content) from the args themselves, Mode B (file) read off
+			// disk by the backend — and persists the document into the agent's
+			// content library.
+			if (!params.file && !params.path) {
+				throw new Error('show_content: pass "file" (existing file) or "path" + "content" (composed document)');
+			}
+			const label = params.file ?? params.path;
 			// Keep the result tiny: the backend renders path/content from the
 			// tool call arguments, not from this result.
 			return {
-				content: [{ type: "text", text: `displayed "${params.path}" in the user's content panel` }],
-				details: { path: params.path },
+				content: [{ type: "text", text: `displayed "${label}" in the user's content panel` }],
+				details: { path: label },
 			};
 		},
 	});
@@ -691,7 +694,26 @@ export default function (pi: ExtensionAPI) {
 	// -----------------------------------------------------------------------
 
 	pi.on("before_agent_start", async (event) => {
-		return { systemPrompt: `${event.systemPrompt}\n\n${COCONUT_GUIDANCE}` };
+		let custom = "";
+		const promptFile = process.env.COCONUT_SYSTEM_PROMPT_FILE;
+		if (promptFile) {
+			try {
+				const text = (await readFile(promptFile, "utf8")).trim();
+				if (text.length > 0 && text.length <= MAX_CUSTOM_PROMPT_CHARS) {
+					custom = text;
+				}
+			} catch {
+				// No prompt file (or unreadable): the agent runs stock.
+			}
+		}
+		const parts = [event.systemPrompt];
+		if (custom) {
+			// Custom instructions precede the Coconut guidance so the
+			// approval-gate rules keep the final, most salient position.
+			parts.push(`## Agent instructions\n\n${custom}`);
+		}
+		parts.push(COCONUT_GUIDANCE);
+		return { systemPrompt: parts.join("\n\n") };
 	});
 
 	// -----------------------------------------------------------------------

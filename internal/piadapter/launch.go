@@ -23,7 +23,10 @@ type SidecarSettings struct {
 	APIKeyEnv     []string // env var names for the key; empty = use convention
 	BashWhitelist []string // extra prefixes for COCONUT_BASH_WHITELIST
 	AgentEnvFile  string   // per-agent env file sourced by the run tool (COCONUT_AGENT_ENV)
-	SessionName   string
+	// SystemPromptFile is the agent's custom system prompt file, read by the
+	// extension's before_agent_start hook on every prompt.
+	SystemPromptFile string
+	SessionName      string
 }
 
 // ResolveBinary picks the sidecar binary: the bundled coconut-pi next to
@@ -65,7 +68,8 @@ func fileIsRegular(p string) bool {
 //	   [--provider P --model M] --session-dir <dir> [--name N]
 //
 // env: PI_CODING_AGENT_DIR (isolated config), provider API key,
-// COCONUT_BASH_WHITELIST, COCONUT_AGENT_ENV, PI_SKIP_VERSION_CHECK=1.
+// COCONUT_BASH_WHITELIST, COCONUT_AGENT_ENV, COCONUT_SYSTEM_PROMPT_FILE,
+// PI_SKIP_VERSION_CHECK=1.
 func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensionPath, binary string) LaunchSpec {
 	args := []string{
 		"--mode", "rpc",
@@ -94,6 +98,9 @@ func BuildLaunchSpec(s SidecarSettings, workspace, agentDir, sessionDir, extensi
 	}
 	if s.AgentEnvFile != "" {
 		env = append(env, "COCONUT_AGENT_ENV="+s.AgentEnvFile)
+	}
+	if s.SystemPromptFile != "" {
+		env = append(env, "COCONUT_SYSTEM_PROMPT_FILE="+s.SystemPromptFile)
 	}
 	if s.APIKey != "" {
 		names := s.APIKeyEnv

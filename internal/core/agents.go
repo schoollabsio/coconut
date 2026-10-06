@@ -87,7 +87,13 @@ func (e *Engine) scanAgentsLocked() []protocol.AgentSummary {
 				}
 			}
 		}
-		out = append(out, protocol.AgentSummary{Slug: slug, Name: name, Current: current, Sessions: sessions})
+		out = append(out, protocol.AgentSummary{
+			Slug:            slug,
+			Name:            name,
+			Current:         current,
+			Sessions:        sessions,
+			HasSystemPrompt: fileExists(systemPromptPath(workspace, slug)),
+		})
 	}
 
 	// Current agent first, then by most recent activity.

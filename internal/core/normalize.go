@@ -213,9 +213,9 @@ func (e *Engine) normalizePiEvent(ev piadapter.Event) {
 		}, "")
 
 		// show_content is the fenced content channel: promote its
-		// args (captured at start) into the content doc. Ungated — it
-		// displays only; composed docs are staged outside the workspace
-		// and file mode is read-only.
+		// args (captured at start) into the content doc and persist the
+		// document into the agent's content library. Ungated — it
+		// displays only; file mode is read-only.
 		if m.ToolName == "show_content" && !m.IsError {
 			if info, ok := e.state.toolArgs[m.ToolCallID]; ok {
 				e.promoteShowContent(info)
@@ -489,13 +489,15 @@ func (e *Engine) readWorkspaceFile(p string) string {
 const showContentMaxBytes = 4 << 20
 
 // promoteShowContent turns a completed show_content call into the panel's
-// content doc. Actor-only.
+// content doc and persists it into the agent's content library. Actor-only.
 //
 // Mode A (path+content): the composed document comes from the tool args.
 // Mode B (file): the backend reads the file off disk itself, so the file's
-// contents never pass through the model's context. Relative paths resolve
-// against the workspace (pi's session cwd).
+// contents never pass through the model's context; a snapshot copy lands in
+// the library (deduped by name). Relative paths resolve against the
+// workspace (pi's session cwd).
 func (e *Engine) promoteShowContent(info toolStartInfo) {
+	format := contentFormat(info.Format)
 	if info.File != "" {
 		path := info.File
 		if !filepath.IsAbs(path) {
@@ -510,12 +512,18 @@ func (e *Engine) promoteShowContent(info toolStartInfo) {
 			e.notify("error", "show_content: "+info.File+" is too large to display")
 			return
 		}
-		e.state.content = &protocol.ContentDoc{Path: info.File, Content: string(data), Format: contentFormat(info.Format), UpdatedAt: nowMs()}
+		name := dedupeContentName(contentDirFor(e.state.workspacePath, e.state.agentSlug), contentEntryName(info.File, format), data)
+		e.persistContentLocked(name, string(data))
+		e.rescanContentLibraryLocked()
+		e.state.content = &protocol.ContentDoc{Path: name, Content: string(data), Format: contentFormatForName(name), SourcePath: info.File, UpdatedAt: nowMs()}
 		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
 		return
 	}
 	if info.Path != "" {
-		e.state.content = &protocol.ContentDoc{Path: info.Path, Content: info.Content, Format: contentFormat(info.Format), UpdatedAt: nowMs()}
+		name := contentEntryName(info.Path, format)
+		e.persistContentLocked(name, info.Content)
+		e.rescanContentLibraryLocked()
+		e.state.content = &protocol.ContentDoc{Path: name, Content: info.Content, Format: format, UpdatedAt: nowMs()}
 		e.emitEvent(protocol.EvContentUpdated, e.state.content, "")
 	}
 }

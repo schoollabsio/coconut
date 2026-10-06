@@ -31,6 +31,14 @@ Architecture (see PLAN.md for the full spec):
 - **React frontend** (`frontend/`) — event-driven UI: two-panel layout
   (chat timeline | content panel), resizable/collapsible, and a sidebar
   settings modal (structured Provider panel + raw YAML Advanced pane).
+- **Per-agent system prompts** — each agent can carry custom instructions
+  (`.coconut/agents/<slug>/system-prompt.md`), editable from the Agents &
+  sessions dialog. The extension appends them to the system prompt on every
+  run, so saving applies to the next message without a restart.
+- **Content library** — every `show_content` document persists under
+  `.coconut/agents/<slug>/content/` (per agent, shared across its sessions)
+  and is browsable from the panel header's filterable dropdown, newest
+  first — even while an approval is pending.
 
 ## Develop
 

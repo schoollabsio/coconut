@@ -66,11 +66,14 @@ export const Cmd = {
   AgentRename: 'agent.rename',
   AgentReset: 'agent.reset',
   AgentList: 'agent.list',
+  AgentPromptGet: 'agent.prompt.get',
+  AgentPromptSet: 'agent.prompt.set',
   WorkspacePick: 'workspace.pick',
   WorkspaceSet: 'workspace.set',
   AgentStart: 'agent.start',
   AgentCancel: 'agent.cancel',
   ApprovalRespond: 'agent.approval.respond',
+  ContentSelect: 'content.select',
   SettingsGet: 'settings.get',
   SettingsSave: 'settings.save',
   SettingsValidate: 'settings.validate',
@@ -106,10 +109,12 @@ export const Ev = {
   AgentFailed: 'agent.failed',
   SidecarLost: 'agent.sidecar.lost',
   ContentUpdated: 'content.updated',
+  ContentLibraryChanged: 'content.library.changed',
   WindowStateChanged: 'window.state.changed',
   SettingsChanged: 'settings.changed',
   Notification: 'notification.created',
   AgentThinkingCompleted: 'agent.thinking.completed',
+  AgentPromptChanged: 'agent.prompt.changed',
 
   // Auth login flow (all carry a loginId)
   AuthLoginStarted: 'auth.login.started',
@@ -197,6 +202,26 @@ export interface ContentDoc {
   content: string
   format?: 'markdown' | 'html'
   updatedAt: number
+  /** Project file a file-mode entry was snapshotted from (empty for composed docs). */
+  sourcePath?: string
+}
+
+/** One persisted document in an agent's content library. */
+export interface ContentEntry {
+  name: string // file name within the content dir (= id)
+  format: 'markdown' | 'html'
+  sizeBytes: number
+  updatedAt: number // unix ms; library sorts newest first
+}
+
+/** content.library.changed payload (wholesale replace). */
+export interface ContentLibraryPayload {
+  entries: ContentEntry[]
+}
+
+/** content.select payload. */
+export interface ContentSelectPayload {
+  name: string
 }
 
 export interface WorkspaceInfo {
@@ -376,6 +401,7 @@ export interface SnapshotState {
   workspace: WorkspaceInfo
   agent: AgentState
   content: ContentDoc | null
+  contentLibrary?: ContentEntry[]
   pendingApprovals: ApprovalRequest[]
   settingsYaml: string
 }
@@ -386,6 +412,25 @@ export interface AgentSummary {
   name: string
   current: boolean
   sessions: SessionSummary[]
+  /** Agent has a custom system-prompt.md on disk (picker badge). */
+  hasSystemPrompt?: boolean
+}
+
+/** agent.prompt.get payload. */
+export interface AgentPromptGetPayload {
+  slug: string
+}
+
+/** agent.prompt.set payload; an empty prompt clears the file. */
+export interface AgentPromptSetPayload {
+  slug: string
+  prompt: string
+}
+
+/** agent.prompt.get / agent.prompt.set result. */
+export interface AgentPromptResult {
+  slug: string
+  prompt: string
 }
 
 export interface SessionSummary {

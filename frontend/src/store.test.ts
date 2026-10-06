@@ -461,3 +461,79 @@ describe('UIStore auth login flow', () => {
     expect(s.state.auth.models).toHaveLength(0)
   })
 })
+
+describe('content pin + library', () => {
+  const doc = { path: 'a.md', content: '# A', updatedAt: 1 }
+
+  it('pins content on pinContent and clears on approval/tool focus', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.pinContent()
+    expect(s.state.contentPinned).toBe(true)
+    expect(s.state.focusedApprovalId).toBeNull()
+
+    s.focusApproval('ap-1')
+    expect(s.state.contentPinned).toBe(false)
+
+    s.pinContent()
+    s.focusToolCall('tc-1')
+    expect(s.state.contentPinned).toBe(false)
+  })
+
+  it('a new approval clears the pin (attention magnet)', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.pinContent()
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, { id: 'ap-1', kind: 'bash', title: 't', command: 'make x' }))
+    expect(s.state.contentPinned).toBe(false)
+    expect(s.state.focusedApprovalId).toBe('ap-1')
+  })
+
+  it('content.updated pins only when no approval is pending; null clears', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+
+    // No pending approvals: fresh agent output pins (shows itself).
+    s.applyBackendMessage(ev(2, Ev.ContentUpdated, doc))
+    expect(s.state.contentPinned).toBe(true)
+    expect(s.state.content?.path).toBe('a.md')
+
+    // Approval arrives → pin cleared; panel shows the approval.
+    s.applyBackendMessage(ev(3, Ev.ApprovalRequested, { id: 'ap-1', kind: 'bash', title: 't', command: 'ls' }))
+    expect(s.state.contentPinned).toBe(false)
+
+    // User browses the library mid-approval → pins. New content must not
+    // steal that browsing state, but the doc still updates.
+    s.pinContent()
+    s.applyBackendMessage(ev(4, Ev.ContentUpdated, { ...doc, path: 'b.md' }))
+    expect(s.state.contentPinned).toBe(true)
+    expect(s.state.content?.path).toBe('b.md')
+
+    // Reset (null payload) clears both.
+    s.applyBackendMessage(ev(5, Ev.ContentUpdated, null))
+    expect(s.state.content).toBeNull()
+    expect(s.state.contentPinned).toBe(false)
+  })
+
+  it('tracks the content library from snapshots and events', () => {
+    const s = new UIStore()
+    const snapMsg = snap(1)
+    snapMsg.state.contentLibrary = [{ name: 'x.md', format: 'markdown', sizeBytes: 3, updatedAt: 1 }]
+    s.applyBackendMessage(snapMsg)
+    expect(s.state.contentLibrary).toHaveLength(1)
+
+    s.applyBackendMessage(ev(2, Ev.ContentLibraryChanged, { entries: [] }))
+    expect(s.state.contentLibrary).toHaveLength(0)
+  })
+
+  it('agent reset clears the pin and content but keeps the library', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    s.applyBackendMessage(ev(2, Ev.ContentLibraryChanged, { entries: [{ name: 'x.md', format: 'markdown', sizeBytes: 1, updatedAt: 1 }] }))
+    s.pinContent()
+    s.applyBackendMessage(ev(3, Ev.AgentReset))
+    expect(s.state.contentPinned).toBe(false)
+    expect(s.state.content).toBeNull()
+    expect(s.state.contentLibrary).toHaveLength(1)
+  })
+})

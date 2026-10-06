@@ -236,12 +236,13 @@ func TestCommandContextTimeout(t *testing.T) {
 func TestLaunchSpecArgs(t *testing.T) {
 	spec := BuildLaunchSpec(
 		SidecarSettings{
-			Provider:      "anthropic",
-			Model:         "sonnet",
-			APIKey:        "sk-test",
-			BashWhitelist: []string{"make", "go build"},
-			AgentEnvFile:  "/cfg/agent/env",
-			SessionName:   "demo",
+			Provider:         "anthropic",
+			Model:            "sonnet",
+			APIKey:           "sk-test",
+			BashWhitelist:    []string{"make", "go build"},
+			AgentEnvFile:     "/cfg/agent/env",
+			SystemPromptFile: "/cfg/agent/system-prompt.md",
+			SessionName:      "demo",
 		},
 		"/ws", "/cfg/agent", "/cfg/sessions", "/ext/coconut.ts", "/bin/coconut-pi",
 	)
@@ -262,6 +263,7 @@ func TestLaunchSpecArgs(t *testing.T) {
 		"ANTHROPIC_API_KEY=sk-test",
 		"COCONUT_BASH_WHITELIST=make,go build",
 		"COCONUT_AGENT_ENV=/cfg/agent/env",
+		"COCONUT_SYSTEM_PROMPT_FILE=/cfg/agent/system-prompt.md",
 		"PI_SKIP_VERSION_CHECK=1",
 	} {
 		if !strings.Contains(envJoined, want) {

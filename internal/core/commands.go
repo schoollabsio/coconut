@@ -26,6 +26,10 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 		e.cmdAgentReset(cmd, respond)
 	case protocol.CmdAgentList:
 		respond <- respondOK(cmd, map[string]any{"agents": e.scanAgentsLocked()})
+	case protocol.CmdAgentPromptGet:
+		e.cmdAgentPromptGet(cmd, respond)
+	case protocol.CmdAgentPromptSet:
+		e.cmdAgentPromptSet(cmd, respond)
 	case protocol.CmdWorkspaceSet:
 		e.cmdWorkspaceSet(cmd, respond)
 	case protocol.CmdAgentStart:
@@ -34,6 +38,8 @@ func (e *Engine) routeCommand(cmd protocol.Command, respond chan []byte) {
 		e.cmdAgentCancel(cmd, respond)
 	case protocol.CmdApprovalRespond:
 		e.cmdApprovalRespond(cmd, respond)
+	case protocol.CmdContentSelect:
+		e.cmdContentSelect(cmd, respond)
 	case protocol.CmdSettingsGet:
 		respond <- respondOK(cmd, protocol.SettingsYAMLPayload{YAML: e.state.settingsRaw})
 	case protocol.CmdSettingsValidate:
@@ -211,6 +217,8 @@ func (e *Engine) cmdAgentReset(cmd protocol.Command, respond chan []byte) {
 			}
 			e.state.resetAgent()
 			e.state.content = nil
+			// The content library is per-agent: it survives a session reset.
+			e.rescanContentLibraryLocked()
 			e.emitEvent(protocol.EvContentUpdated, nil, "")
 			e.emitEvent(protocol.EvAgentReset, map[string]any{
 				"agentName": e.state.agentName,

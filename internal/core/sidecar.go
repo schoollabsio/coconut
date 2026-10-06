@@ -122,9 +122,14 @@ func (e *Engine) startSidecarLocked(agentSlug, switchTo string, fresh bool, done
 		finish := func() {
 			// Tool call reconstruction (synchronous file read) and
 			// message reconstruction (async pi RPC) are independent
-			// siblings — no semantic ordering. Run the sync one
+			// siblings — no semantic ordering. Run the sync ones
 			// first, then kick off the async message fetch.
 			e.rebuildToolCallsLocked(sessionFile)
+			// The content library is per-agent: rescan from disk, then pick
+			// the panel content (the session's last shown doc, restored
+			// from args above, wins; otherwise the library's newest entry).
+			e.rescanContentLibraryLocked()
+			e.reconcileContentSelectionLocked()
 			e.rebuildMessagesLocked(func() {
 				e.state.resequenceRestoredTimeline()
 				e.emitEvent(protocol.EvSessionRestored, map[string]any{
@@ -511,19 +516,21 @@ func buildLaunchSpec(cfg EngineConfig, s Settings, agentName, workspace, session
 			Dir:    workspace,
 			Env: []string{
 				"COCONUT_AGENT_ENV=" + filepath.Join(filepath.Dir(sessionDir), "env"),
+				"COCONUT_SYSTEM_PROMPT_FILE=" + filepath.Join(filepath.Dir(sessionDir), "system-prompt.md"),
 				"COCONUT_FAKEPI_TRANSCRIPT_DIR=" + sessionDir,
 			},
 		}
 	}
 
 	return piadapter.BuildLaunchSpec(piadapter.SidecarSettings{
-		Provider:      s.Provider,
-		Model:         s.Model,
-		APIKey:        sidecarAPIKey(s),
-		APIKeyEnv:     sidecarKeyEnvVars(s),
-		BashWhitelist: s.BashWhitelist,
-		AgentEnvFile:  filepath.Join(filepath.Dir(sessionDir), "env"),
-		SessionName:   agentName,
+		Provider:         s.Provider,
+		Model:            s.Model,
+		APIKey:           sidecarAPIKey(s),
+		APIKeyEnv:        sidecarKeyEnvVars(s),
+		BashWhitelist:    s.BashWhitelist,
+		AgentEnvFile:     filepath.Join(filepath.Dir(sessionDir), "env"),
+		SystemPromptFile: filepath.Join(filepath.Dir(sessionDir), "system-prompt.md"),
+		SessionName:      agentName,
 	}, workspace, agentDir, sessionDir, cfg.ExtensionPath, binary)
 }
 

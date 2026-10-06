@@ -53,13 +53,15 @@ same file.
 
 ### 2. `show_content` tool (content panel channel)
 
-Parameters: `path`, `content`. Displays a document in the app's fenced
-content panel. **Not** approval-gated — it only displays; the staged copy
-lives in `$PI_CODING_AGENT_DIR/content/`, outside the project tree, so it
-can never create or modify project files. The tool result is intentionally
-tiny: the backend renders the document from the tool
-call *arguments* (`path`/`content` on `tool_execution_start`), not from the
-result.
+Parameters: `path` + `content` (composed document) or `file` (an existing
+file read directly from disk). Displays a document in the app's fenced
+content panel. **Not** approval-gated — it only displays and writes nothing
+itself: the backend renders the document from the tool call *arguments*
+(`path`/`content`/`file` on `tool_execution_start`) and persists it into the
+agent's content library (`<workspace>/.coconut/agents/<slug>/content/`), so
+every session of the agent can re-open it from the panel's dropdown (newest
+first). File-mode entries are snapshot copies; the doc records its
+`sourcePath`. The tool result is intentionally tiny.
 
 ### 3. Bash gating (`tool_call` hook)
 
@@ -97,6 +99,13 @@ should gather context with read/grep first, propose complete well-formed edits
 with clear `what`/`why`, never assume approval, use `show_content` for
 deliverables the user should read, and stop (rather than retry) after a
 dismissed proposal.
+
+Before that guidance, the hook inserts the agent's **custom system prompt**:
+a `system-prompt.md` in the agent's directory, pointed at by
+`COCONUT_SYSTEM_PROMPT_FILE` (set by the backend at launch). The hook fires
+per user prompt and re-reads the file each time, so edits made in the Agents
+& sessions dialog apply to the next message with no sidecar restart. Files
+over 64 KB are ignored defensively; a missing file is a no-op.
 
 ### 5. Project trust (`project_trust`)
 
