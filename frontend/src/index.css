@@ -132,6 +132,14 @@ html, body, #root {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+/* Cap the sticky prompt so a large paste can't cover the whole conversation;
+   it scrolls internally instead. ~10 lines of text including the padding. */
+.user-sticky .user-bubble {
+  max-height: 16em;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
 
 /* Rail badges: the rail cell baseline-aligns a zero-width strut with the
    badge (empty spans baseline on their bottom edge). Shifting the badge

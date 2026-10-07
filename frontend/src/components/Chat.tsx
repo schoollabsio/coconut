@@ -100,6 +100,13 @@ function sameGroup(a: ToolCallGroup, b: ToolCallGroup): boolean {
   )
 }
 
+/** A scroller is "near the bottom" when its distance from the bottom edge is
+ *  under `thresholdPx`. The tall chat list passes a generous value; the
+ *  compact thinking block uses the tighter default. Extracted for testing. */
+export function isNearBottom(scrollHeight: number, scrollTop: number, clientHeight: number, thresholdPx = 24): boolean {
+  return scrollHeight - scrollTop - clientHeight < thresholdPx
+}
+
 type UserRowProps = { message: ChatMessage; sticky: boolean }
 const UserRow = memo(function UserRow({ message, sticky }: UserRowProps) {
   return (
@@ -116,6 +123,22 @@ const ThinkingRow = memo(function ThinkingRow({ railKey, message }: ThinkingRowP
   const [expanded, setExpanded] = useState(false)
   const isDone = message.thinkingDone === true
   const thinking = message.thinking ?? ''
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // Follow the tail only while the user is near the bottom of the block, so
+  // scrolling up to read earlier thought isn't yanked back down (mirrors the
+  // outer chat list's at-bottom guard).
+  const atBottomRef = useRef(true)
+  const onScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    atBottomRef.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)
+  }
+
+  useLayoutEffect(() => {
+    if (isDone) return
+    const el = scrollRef.current
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [thinking, isDone])
 
   if (!thinking) return null
 
@@ -126,7 +149,7 @@ const ThinkingRow = memo(function ThinkingRow({ railKey, message }: ThinkingRowP
         railKey={railKey}
         spanClassName="relative z-10 h-[10px] w-[10px] rounded-full border-2 border-dim bg-dim animate-pulse"
       />
-        <div className="min-w-0 max-h-[6em] overflow-hidden whitespace-pre-wrap italic text-dim">
+        <div ref={scrollRef} onScroll={onScroll} className="min-w-0 max-h-[6em] overflow-y-auto whitespace-pre-wrap italic text-dim" style={{ scrollbarGutter: 'stable' }}>
           <FadingTail text={thinking} className="text-dim" />
         </div>
       </div>
@@ -410,7 +433,7 @@ export function Chat({ client }: { client: BackendClient }) {
   const onScroll = () => {
     const el = chatRef.current
     if (!el) return
-    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+    atBottomRef.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight, 120)
   }
   useLayoutEffect(() => {
     if (!pendingPinRef.current || !latestUserId || latestUserId === pinnedUserIdRef.current) return
@@ -456,7 +479,7 @@ export function Chat({ client }: { client: BackendClient }) {
 
   return (
     <>
-      <div ref={chatRef} onScroll={onScroll} className="max-h-96 overflow-y-auto pr-2 pt-2 text-base md:max-h-none md:flex-1">
+      <div ref={chatRef} onScroll={onScroll} className="max-h-96 overflow-y-auto pr-2 text-base md:max-h-none md:flex-1">
         <div ref={contentRef} className="relative min-h-full">
           <RailOverlay rows={railRows} paths={railPaths} />
           <div className="relative z-10 flex flex-col">
