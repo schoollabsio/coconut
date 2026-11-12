@@ -163,6 +163,12 @@ func TestValidateModelPrefix(t *testing.T) {
 	if hasSeverity(errorsOf(msgs), "error") {
 		t.Fatalf("expected valid, got %v", msgs)
 	}
+	// OpenRouter IDs include an upstream vendor prefix as part of the raw
+	// model ID; it must not be treated as a pi provider prefix.
+	_, msgs = problemsFor(t, "provider: openrouter\napiKey: k\nmodel: qwen/qwen3.8-max\n", noEnv)
+	if hasSeverity(errorsOf(msgs), "error") {
+		t.Fatalf("expected OpenRouter vendor/model ID to be valid, got %v", msgs)
+	}
 	// Bare substring patterns are fine (pi fuzzy-matches).
 	_, msgs = problemsFor(t, "provider: anthropic\napiKey: k\nmodel: claude\n", noEnv)
 	if hasSeverity(msgs, "error") {

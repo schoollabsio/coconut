@@ -163,7 +163,11 @@ func (s *Settings) Validate(env func(string) (string, bool)) []protocol.ConfigPr
 	if s.Model != "" {
 		if strings.ContainsAny(s.Model, "\n\r") {
 			prob("error", "model: must be a single-line pattern")
-		} else if i := strings.Index(s.Model, "/"); i > 0 {
+		} else if i := strings.Index(s.Model, "/"); i > 0 && s.Provider != "openrouter" {
+			// OpenRouter model IDs conventionally include their upstream vendor,
+			// e.g. "qwen/qwen3.8-max". With OpenRouter selected, that slash
+			// belongs to the raw model ID rather than denoting a pi provider/model
+			// reference. Pi resolves these IDs against OpenRouter's catalog.
 			if prefix := s.Model[:i]; !isKnownProvider(prefix) {
 				if _, defined := s.Providers[prefix]; !defined {
 					prob("error", "model %q: unknown provider prefix %q", s.Model, prefix)
