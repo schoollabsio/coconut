@@ -36,8 +36,16 @@ Read `PLAN.md` (the full technical spec) and `README.md` first.
 ### 1. Approval-gated editing
 The **only** file-modification channel is `propose_edit` (a pi tool
 registered by `pi-extension/coconut.ts`). Built-in `edit`/`write` tools are
-NOT available. When proposing edits, each `oldText` must match the file's
-current content exactly; edits apply sequentially.
+NOT available. Edits address lines by **hash**: `read` prints a short digest in
+front of every line (`a3kf | text`), and an edit is `{ hash, newText }`
+(`newText: ""` deletes the line, `endHash` spans an inclusive range,
+`insert: "before" | "after"` adds lines beside the anchor). A hash identifies a
+line by its own content, so a batch of edits cannot drift onto the wrong line
+when an earlier edit shifts numbering — and a stale or ambiguous hash errors
+instead of guessing. Legacy exact-match `oldText` edits remain supported; all
+edits apply sequentially. The algorithm is mirrored in
+`pi-extension/hashline.ts` ↔ `internal/core/hashline.go`, pinned by
+`testdata/hashline_golden.json`.
 
 ### 2. Go owns domain truth
 The Go backend is a **single-writer actor** (`core.Engine.Run`). All domain
@@ -99,11 +107,23 @@ JSONL over stdio to the Go actor. This is a deliberate exception to
 │   │   ├── approvalActions.ts  # global ⌘⏎ approval targeting / dismiss-on-send
 │   │   ├── store.ts           # UIStore (single client-side state store; auth slice)
 │   │   ├── store.test.ts      # Vitest tests for the store
+│   │   ├── storeState.ts      # UIState / auth / notification types + initial value
+│   │   ├── storeEvents.ts     # EventCtx + event-name → handler registry
+│   │   ├── storeAgentEvents.ts # agent run / message / tool + approval handlers
+│   │   ├── storeContentEvents.ts # content / settings / session / workspace handlers
+│   │   ├── storeAuthEvents.ts # auth.login.* flow handlers
+│   │   ├── storeSnapshot.ts   # pure snapshot → state patch (focus reconciliation)
+│   │   ├── storeStreams.ts    # cumulative token/thinking payload application
 │   │   ├── App.tsx            # Orchestrator: connect → snapshot → live events
 │   │   ├── useAuthStatus.ts   # header chip: keep provider credential status fresh
 │   │   ├── yamlPatch.ts       # pure settings.yaml provider/model rewrite (tested)
-│   │   ├── components/        # Chat, ContentPanel, Header,
-│   │   │                      # SettingsModal, ProviderPanel, AdvancedPanel
+│   │   ├── components/        # Chat, ContentPanel, Header, SettingsModal, AdvancedPanel
+│   │   │   ├── chat/          # ChatList, ChatForm, rail rows, chatUtils
+│   │   │   ├── content/       # ApprovalView, ToolCallView, ContentPicker,
+│   │   │   │                  # DiffView, HtmlPreview, panelHeader…
+│   │   │   ├── provider/      # the ProviderPanel split (select, credentials,
+│   │   │   │                  # model select, login flow, apply)
+│   │   │   └── AgentPicker/   # agent/session browser (+ SystemPromptSection)
 │   │   └── index.css          # Tailwind import
 │   └── dist/                  # Embedded via go:embed (built by `bun run build`)
 ├── internal/
@@ -116,6 +136,7 @@ JSONL over stdio to the Go actor. This is a deliberate exception to
 │   │   ├── auth.go            # Login-helper lifecycle + auth command handlers
 │   │   ├── settings.go        # settings.yaml parsing, validation, models.json generation
 │   │   ├── diff.go            # applyEdits, buildUnifiedDiff
+│   │   ├── hashline.go        # hashline hashing/resolution (TS mirror: pi-extension/hashline.ts)
 │   │   └── *_test.go          # Integration tests against fakepi (+ opt-in real-helper tests)
 │   ├── piadapter/
 │   │   └── piadapter.go        # JSONL RPC client + sidecar process lifecycle
@@ -127,7 +148,9 @@ JSONL over stdio to the Go actor. This is a deliberate exception to
 ├── pi-login/
 │   └── helper.ts               # coconut-login source (TypeScript; compiled at build time)
 ├── pi-extension/
-│   └── coconut.ts              # Registered pi extension: approve-gated tools
+│   ├── coconut.ts              # Registered pi extension: approve-gated tools
+│   ├── hashline.ts             # Line hashing/resolution (Go mirror: internal/core/hashline.go)
+│   └── hashline.test.ts        # bun tests, incl. the shared golden vector
 ├── cmd/fakepi/                 # Scripted pi stand-in for testing/dev
 │   ├── main.go                 # CLI entry
 │   ├── scenario.go             # Scenario step execution
@@ -181,8 +204,9 @@ modal. `COCONUT_CONFIG_DIR` overrides the config location.
    `protocol.ApprovalKind*`.
 3. In `internal/protocol/protocol.go`: add the kind constant and the
    relevant `ApprovalRequest` fields (mirrored in `frontend/src/protocol.ts`).
-4. In `frontend/src/components/ContentPanel.tsx`: add a branch for the new
-   approval kind in `ApprovalView`.
+4. In `frontend/src/components/content/ApprovalView.tsx`: render the new kind's
+   body — What/Why and the Approve/Dismiss row are shared, so usually only a
+   body component is needed.
 
 ### Add a frontend command
 1. Add `CmdXxx = "xxx"` in `internal/protocol/protocol.go` AND the matching
@@ -197,9 +221,11 @@ modal. `COCONUT_CONFIG_DIR` overrides the config location.
 1. Add `EvXxx = "xxx"` in `internal/protocol/protocol.go` AND
    `Ev.Xxx = "xxx"` in `frontend/src/protocol.ts`.
 2. Emit it in `internal/core/normalize.go` via `e.emitEvent(...)`.
-3. Handle it in `frontend/src/store.ts` within `applyEvent`'s switch.
-   The store does NOT handle unknown events (safe to ignore v1 events your
-   component doesn't need).
+3. Add a handler to the matching table (`storeAgentEvents.ts` / `storeContentEvents.ts`
+   / `storeAuthEvents.ts`) keyed by `Ev.Xxx`; `storeEvents.ts` composes them.
+   `applyEvent` only sequences (duplicate drop, seq-gap resync) and dispatches —
+   it holds no domain logic. An event name with no entry is ignored (safe to
+   skip v1 events your component doesn't need).
 
 ### Add a backend stream
 1. Add `StreamXxx = "xxx"` in `internal/protocol/protocol.go` AND
@@ -212,11 +238,11 @@ modal. `COCONUT_CONFIG_DIR` overrides the config location.
 
 ### Edit the diff preview for a file approval
 The diff is computed server-side in `internal/core/diff.go`:
-`applyEdits` (exact-match, first-occurrence-wins, sequential) produces
+`applyEdits` (hashline-resolved or legacy exact-match, sequential) produces
 newContent; `buildUnifiedDiff` renders `--- a/file` / `+++ b/file` headers,
 a `@@ proposed changes @@` hunk header, 3 lines of context, and `…`
 elisions for collapsed context. The frontend (`DiffView` in
-`ContentPanel.tsx`) renders by prefix: ` `, `-`, `+`, `@`, `…`.
+`components/content/DiffView.tsx`) renders by prefix: ` `, `-`, `+`, `@`, `…`.
 
 ---
 
@@ -415,7 +441,8 @@ state.json → newest session's `session_info.name` → humanized slug.
 - Errors block saving; warnings are informational.
 
 ### Diff (`internal/core/diff.go`)
-- `applyEdits` — exact-match replacements, first-occurrence-wins, sequential.
+- `applyEdits` — sequential hashline edits (`{hash, endHash?, insert?, newText}`,
+  resolved by `applyHashlineEdit`) or legacy exact-match replacements (first occurrence wins).
 - `buildUnifiedDiff` — renders `--- a/file` / `+++ b/file` headers,
   `@@ proposed changes @@` hunk, 3 lines context, `…` elisions.
 
@@ -439,15 +466,33 @@ Wires Wails bindings:
 - `onMessage(handler)` → `window.runtime.EventsOn("backend", ...)`
 
 ### UIStore (`frontend/src/store.ts`)
-Framework-free store with a React binding via `useSyncExternalStore`.
+Framework-free store with a React binding via `useSyncExternalStore`. The class
+keeps only sequencing, stream buffering and the local UI setters; the logic it
+used to inline lives in the `store*` modules beside it.
 - `applyBackendMessage(msg)` — dispatches to `applySnapshot`, `applyEvent`,
   or `bufferStream`.
-- `applyEvent` — seq-gap detection → `resync()`; otherwise applies to state.
-  Also handles the six `auth.login.*` events into the `auth` slice
-  (status / models / in-flight login flow; all terminal events are
-  guarded by `loginId`).
-- `bufferStream` / `applyStream` — buffers streams in a `Map`, flushes via
-  `requestAnimationFrame`, applies cumulative payloads.
+- `applyEvent` — seq-gap detection → `resync()`, then `EVENT_HANDLERS[ev.name]`.
+  It owns sequencing only; domain mutation lives in the handler tables.
+- `storeState.ts` — `UIState` / `AuthState` / `AuthLoginFlow` / `Notification`
+  plus `initialState`, no behavior. `store.ts` re-exports the types so
+  components still import them from `'./store'`; helper modules import them here.
+- `storeEvents.ts` — `EventCtx` (the narrow slice of the store a handler may
+  touch) plus the composed `Ev.*` → handler registry. The domain tables:
+  `storeAgentEvents.ts` (agent run, messages, tool calls, approvals),
+  `storeContentEvents.ts` (content / library / settings / window / notification,
+  workspace / session-restore / reset), `storeAuthEvents.ts` (the six
+  `auth.login.*` events; terminal ones guarded by `loginId`).
+  UIStore `implements EventCtx` and passes itself, so handlers read live state.
+  `set` / `setAgent` / `finalized` are public only because those modules live
+  outside the class — treat them as store-internal.
+- `storeSnapshot.ts` — `snapshotPatch(prev, snap)`: the authoritative snapshot
+  expressed as a pure patch. Focus ids are reconciled against the snapshot's own
+  lists (a stale id would block auto-focus forever) and a content pin survives
+  only while its document does.
+- `storeStreams.ts` — `applyStreamPayload(ctx, name, payload)` applies the
+  cumulative payloads once `bufferStream` has coalesced them per
+  `requestAnimationFrame`; both branches tolerate landing after the finalizing
+  event (never reviving a terminal status or a finalized message id).
 - Does NOT own domain truth; derives UI state from backend messages.
 
 ### App.tsx (`frontend/src/App.tsx`)
@@ -462,21 +507,36 @@ effects. Cleanup must fully undo setup; setup must be safe to run twice.
 
 ### Components (`frontend/src/components/`)
 - **Header.tsx** — agent name (rename), agents/sessions picker button, new-session button, workspace picker, settings gear.
-- **AgentPicker.tsx** — agent/session browser modal: agents left, sessions right, new-agent + new-session actions.
+- **AgentPicker/** — agent/session browser modal (`index.tsx` with `AgentList`,
+  `SessionList`, `SystemPromptSection`): agents left, sessions right, new-agent +
+  new-session actions. `AgentPicker.tsx` is a re-export shim, so
+  `./components/AgentPicker` resolves to the directory.
 - **Chat.tsx** — unified railed timeline: messages + tool calls, sticky
-  latest user prompt, inline approval cards, and live/folded thinking.
-- **ContentPanel.tsx** — approval view (What/Why/Diff + Approve/Deny),
-  focused tool-call detail mode, or content doc preview (Markdown).
-  `ApprovalView` has branches per approval kind.
+  latest user prompt, inline approval cards, and live/folded thinking. It keeps
+  only the wiring (timeline build, rail measurement, auto-follow, prompt pin) and
+  composes `chat/`: `ChatList` (the scroller, rows, rail overlay, approval cards,
+  busy hint), `ChatForm` (the input), the row components, and `chatUtils`
+  (`buildRailRows`, `isNearBottom`, thinking-duration formatting).
+- **ContentPanel.tsx** — the panel's precedence and header line only: which view
+  wins (approval > tool call > pinned/latest content > empty, via
+  `resolvePanelView`) and the dot/file/status it prints (`panelHeader`). Every
+  view lives in `content/`: `ApprovalView` (What/Why + diff or command +
+  Approve/Dismiss, one body per approval kind), `ToolCallView`, `HtmlPreview`,
+  `EmptyPanel`, `PendingChip`, `ContentPicker` (the library dropdown), `DiffView`,
+  and the shared `Field`/`Prose`/`Meta` blocks in `fields.tsx`.
 - **SettingsModal.tsx** — sidebar shell: **Provider** (default) and
   **Advanced** panes; defaults back to Provider on each open.
-- **ProviderPanel.tsx** — structured provider UI: provider dropdown,
-  credential status chip, OAuth sign-in flow (renders `auth.login.*`
-  events: device code / auth URL / prompt forms, submit/skip/cancel,
-  outcome banner), API-key entry, sign-out (two-step confirm), model
-  dropdown (`auth.models`), and **Apply** (rewrites the top-level
-  `provider:`/`model:` lines via `withProviderModel` in `yamlPatch.ts`
-  → `settings.save`).
+- **provider/** — the structured provider UI, split out of the old single
+  `ProviderPanel.tsx`: `ProviderPanel.tsx` composes `ProviderSelect`,
+  `CredentialCard` (status chip, sign-out, OAuth sign-in, API-key entry),
+  `ModelSelect` (`auth.models`) and `ApplyFooter`, plus `LoginFlowCard` /
+  `LoginPromptForm` / `LoginStepLine` / `LoginOutcome` for the in-flight sign-in
+  card that renders the `auth.login.*` events (device code / auth URL / prompt
+  forms, submit/skip/cancel, outcome banner). Shared state lives in
+  `useProviderAuth` (status + models fetch, the selection tracked across both
+  dropdowns); the Apply round-trip is `applyProviderModel.ts` — it rewrites the
+  top-level `provider:`/`model:` lines via `withProviderModel` in `yamlPatch.ts`
+  → `settings.save`.
 - **AdvancedPanel.tsx** — raw YAML editor with live validation (debounced),
   errors block save, warnings are informational.
 - **ProviderModelPicker.tsx** — header chip showing the live session's
@@ -505,9 +565,15 @@ cd frontend && npx vitest run       # UI store tests
 - `internal/core/engine_test.go` exercises the full backend pipeline using
   fakepi: workspace set → prompt → streaming → approval → completion →
   snapshot verification. Also tests sequence monotonicity.
-- Frontend store tests (`frontend/src/store.test.ts`) use Vitest and verify
-  snapshot application, event ordering, seq-gap recovery, stream coalescing,
-  and approval state transitions.
+- Frontend store tests use Vitest: `store.test.ts` covers the store end-to-end
+  (snapshot application, event ordering, seq-gap recovery, stream coalescing,
+  approval state transitions); `storeSnapshot.test.ts` and `storeStreams.test.ts`
+  cover the extracted pure/helper modules directly — focus reconciliation and
+  pin survival, and the races where an unsequenced stream flushes after the
+  finalizing event.
+- The extracted store modules (`storeSnapshot.ts`, `storeStreams.ts`, the
+  handler tables) take an `EventCtx` or plain args, so new logic there is
+  unit-testable without a store round-trip.
 - `testdata/scenarios/*.json` drive fakepi for integration scenarios.
 
 ### Writing a fakepi scenario
@@ -571,7 +637,13 @@ this — don't "simplify" it back.
   send to `inbox` are safe from any goroutine.
 - **TypeScript/React**: Tailwind for styling. Components use `useUIState`
   selectors — never subscribe to raw backend events as state sources.
-  The `protocol.ts` is a **manual mirror** of `internal/protocol/protocol.go`;
-  when you add a constant or type in one, update the other.
+- **File size and complexity** (`frontend/.eslintrc.json`): frontend files cap at
+  200 significant lines, functions at cyclomatic complexity 10. When a file hits
+  the cap, split it along a real seam — a state hook, an orchestrator plus
+  pieces, or a pure helper module — instead of adding an exemption; the store,
+  `chat/` and `provider/` splits are the pattern. Two overrides exist by design:
+  test files are exempt from `max-lines` (a case table belongs in one file), and
+  `protocol.ts` is raised to 400 because it mirrors the Go protocol rather than
+  implementing application logic.
 - **protocol.ts** is a **manual mirror** of `internal/protocol/protocol.go`.
   When you add a constant or type in one, update the other.
