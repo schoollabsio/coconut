@@ -16,6 +16,10 @@ bin/
 # Dependencies — ignore node_modules anywhere in the repo
 node_modules/
 
+# Stray lockfile from running npm at the repo root (no root package.json; the
+# frontend owns frontend/package-lock.json and frontend/bun.lock)
+/package-lock.json
+
 # OS
 .DS_Store
 
