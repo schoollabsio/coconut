@@ -66,4 +66,42 @@ describe('buildRailPaths', () => {
       { kind: 'curve', d: 'M 10 30 C 10 38 42 32 42 40' },
     ])
   })
+
+  it('leaves a child off the rail when its group is collapsed', () => {
+    // The child lane only exists while its own group is the open branch: a
+    // child of a collapsed group must not borrow the previous group's lane.
+    const rows: RailRow[] = [
+      { kind: 'group', key: 'g1', expanded: true },
+      { kind: 'group-tool', key: 'c1', parentKey: 'g1' },
+      { kind: 'group', key: 'g2', expanded: false },
+      { kind: 'group-tool', key: 'c2', parentKey: 'g2' },
+    ]
+    const paths = buildRailPaths(rows, {
+      g1: pos(10, 20, 30),
+      c1: pos(42, 40, 50),
+      g2: pos(10, 60, 70),
+      c2: pos(42, 80, 90),
+    })
+
+    expect(paths).toEqual([
+      { kind: 'curve', d: 'M 10 30 C 10 38 42 32 42 40' },
+      { kind: 'curve', d: 'M 42 50 C 42 58 10 52 10 60' },
+    ])
+  })
+
+  it('skips an unmeasured row without letting it become the rail anchor', () => {
+    // 'b' is off-screen and draws nothing, but the spine still runs from 'a' to
+    // 'c': the skipped row never becomes the bullet the next one starts from.
+    const rows: RailRow[] = [
+      { kind: 'text', key: 'a' },
+      { kind: 'tool', key: 'b' },
+      { kind: 'tool', key: 'c' },
+    ]
+    const paths = buildRailPaths(rows, {
+      a: pos(10, 0, 10),
+      c: pos(10, 40, 50),
+    })
+
+    expect(paths).toEqual([{ kind: 'line', d: 'M 10 10 L 10 40' }])
+  })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildTimeline } from '../timeline'
-import { buildRailRows } from './Chat'
+import { buildRailRows, type RenderRow } from './chat/chatUtils'
 import type { ChatMessage } from '../protocol'
 
 const user = (id: string, seq: number, text: string): ChatMessage => ({ id, seq, role: 'user', text })
@@ -24,11 +24,12 @@ describe('buildRailRows', () => {
     )
 
     const rows = buildRailRows(timeline, new Set())
-    const keys = rows.filter((row) => row.kind !== 'user').map((row) => row.key)
-    const railKeys = rows.filter((row) => row.kind !== 'user').map((row) => row.railKey)
+    const keyed = rows.filter(
+      (row): row is Exclude<RenderRow, { kind: 'user' }> => row.kind !== 'user',
+    )
 
-    expect(railKeys).toEqual(keys)
-    expect(rows.find((row) => row.kind === 'thinking')?.railKey).toBe('a1-think')
-    expect(rows.find((row) => row.kind === 'text')?.railKey).toBe('a2')
+    expect(keyed.map((row) => row.railKey)).toEqual(keyed.map((row) => row.key))
+    expect(keyed.find((row) => row.kind === 'thinking')?.railKey).toBe('a1-think')
+    expect(keyed.find((row) => row.kind === 'text')?.railKey).toBe('a2')
   })
 })

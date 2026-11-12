@@ -49,7 +49,6 @@
   --color-ink: #FFFFFF;
   --color-mute: #C9CED6;
   --color-dim: #8C939C;
-  --color-faint: #5B626B;
   --color-accent: #58C97E;
   --color-accenthover: #71E19B;
   --color-accentsoft: rgb(88 201 126 / 0.14);
@@ -64,6 +63,61 @@
   --color-warn: #D9A05B;
   --color-danger: #E06458;
   --color-info: #7BA6C8;
+}
+
+/* Custom scrollbars for a consistent dark aesthetic.
+ *
+ * Two engines, one look — and written naively they cancel each other out:
+ *  - WebKit/Chromium style the ::-webkit-scrollbar pseudo-elements below, but
+ *    per CSS Scrollbars 1 they are ignored entirely on any element whose
+ *    `scrollbar-color` computes to something other than `auto` (Chrome 121+,
+ *    Safari 26+) and the platform scrollbar is drawn instead. So the standard
+ *    properties must stay OFF these engines — hence the @supports guard below.
+ *    WebKit additionally keeps painting its native scroller chrome unless
+ *    `-webkit-appearance: none` is set on the parts.
+ *  - Firefox has no ::-webkit-scrollbar, so it gets scrollbar-width/color.
+ */
+::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  -webkit-appearance: none;
+  background: transparent;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  -webkit-appearance: none;
+  /* Transparent border + padding-box clip: the 2px gutter shows whatever surface
+     the scroller sits on, so the thumb reads the same on --bg, --surface and
+     --inset instead of being ringed in one hardcoded colour. */
+  background: var(--border);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  min-height: 28px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-linestrong);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--color-linestrong);
+  background-clip: padding-box;
+}
+
+/* Firefox: no ::-webkit-scrollbar, so it needs the standard properties. Scoped,
+   because a non-auto scrollbar-color on WebKit/Chromium disables every rule
+   above and drops back to the default scrollbar. */
+@supports not selector(::-webkit-scrollbar) {
+  *
+  {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
 }
 
 html, body, #root {

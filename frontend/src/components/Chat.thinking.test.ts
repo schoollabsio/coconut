@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isNearBottom } from './Chat'
+import { isNearBottom } from './chat/chatUtils'
 
 describe('isNearBottom', () => {
   it('is true at the very bottom', () => {

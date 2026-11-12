@@ -1,19 +1,16 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { BackendClient } from '../backend'
 import {
   Cmd,
   type AuthModel,
-  type AuthProviderStatus,
   type AuthStatusResult,
   type SettingsValidateResult,
 } from '../protocol'
 import { store, useUIState } from '../store'
 import { modelDisplayName, stripModelRef } from '../modelRef'
 import { withProviderModel } from '../yamlPatch'
-
-function providerName(p: AuthProviderStatus): string {
-  return p.name && p.name !== p.id ? p.name : p.id
-}
+import { ModelMenu, ProviderMenu } from './provider/PickerMenu'
+import { providerName } from './provider/pieces'
 
 /**
  * Header chip: "<provider> / <model>" for the live session. Each half is a
@@ -30,10 +27,7 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
   const [open, setOpen] = useState<'none' | 'provider' | 'model'>('none')
   const [busy, setBusy] = useState(false)
 
-  const activeId = status?.activeProvider ?? ''
-  const active = status?.providers.find((p) => p.id === activeId) ?? null
-  const configured = !!active?.configured
-  const activeModel = status?.activeModel ?? ''
+  const { activeId, active, configured, activeModel } = activeSelection(status)
   const activeModels = modelsFor === activeId ? models : []
 
   // Warm the model cache for the active provider so the chip can show the
@@ -91,7 +85,7 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
     }
   }
 
-  if (!status || !active) {
+  if (!active) {
     return (
       <button
         onClick={() => store.setSettingsOpen(true)}
@@ -104,9 +98,8 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
     )
   }
 
-  const currentModelId = activeModel ? stripModelRef(activeModel, activeId) : ''
-  const modelLabel = activeModel ? modelDisplayName(activeModel, activeId, activeModels) : 'choose model…'
-  const signedIn = status.providers
+  const { currentModelId, modelLabel } = chipLabels(activeModel, activeId, activeModels)
+  const signedIn = (status?.providers ?? [])
     .filter((p) => p.configured)
     .sort((a, b) => providerName(a).localeCompare(providerName(b)))
 
@@ -114,8 +107,8 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
 
   return (
     <div className="no-drag relative">
-      <div className={`flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors ${busy ? 'opacity-60' : ''}`}>
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${configured ? 'bg-accent' : 'bg-faint'}`} />
+      <div className={chipClass(busy)}>
+        <span className={dotClass(configured)} />
         <button
           onClick={() => toggle('provider')}
           disabled={busy}
@@ -128,10 +121,8 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
         <button
           onClick={() => toggle('model')}
           disabled={busy || !configured}
-          title={configured ? `Model: ${currentModelId || 'unset'} — click to pick` : 'Sign in to pick a model'}
-          className={`font-mono text-[10px] rounded px-0.5 -mx-0.5 transition-colors disabled:text-faint ${
-            activeModel ? 'text-mute hover:text-ink' : 'text-warn hover:text-ink'
-          }`}
+          title={modelTitle(configured, currentModelId)}
+          className={modelClass(!!activeModel)}
         >
           {modelLabel}
         </button>
@@ -142,44 +133,24 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
           <div className="fixed inset-0 z-40" onClick={() => setOpen('none')} />
           <div className="absolute right-0 top-full z-50 mt-1 w-64 max-h-80 overflow-y-auto rounded-lg border border-line bg-base py-1 shadow-xl">
             {open === 'provider' ? (
-              <>
-                <MenuLabel>signed-in providers</MenuLabel>
-                {signedIn.map((p) => (
-                  <MenuRow
-                    key={p.id}
-                    checked={p.id === activeId}
-                    label={providerName(p)}
-                    onClick={() => (p.id === activeId ? setOpen('none') : void apply(p.id, null))}
-                  />
-                ))}
-                <div className="my-1 border-t border-line" />
-                <MenuRow
-                  label="Manage providers…"
-                  onClick={() => {
-                    setOpen('none')
-                    store.setSettingsOpen(true)
-                  }}
-                />
-              </>
+              <ProviderMenu
+                providers={signedIn}
+                activeId={activeId}
+                onPick={(id) => void apply(id, null)}
+                onClose={() => setOpen('none')}
+                onManage={() => {
+                  setOpen('none')
+                  store.setSettingsOpen(true)
+                }}
+              />
             ) : (
-              <>
-                <MenuLabel>models — {providerName(active)}</MenuLabel>
-                {modelsFor !== activeId ? (
-                  <div className="px-3 py-2 text-[11px] text-faint">loading…</div>
-                ) : activeModels.length === 0 ? (
-                  <div className="px-3 py-2 text-[11px] text-faint">no models listed for this provider</div>
-                ) : (
-                  activeModels.map((m) => (
-                    <MenuRow
-                      key={m.id}
-                      checked={currentModelId === m.id}
-                      label={m.name && m.name !== m.id ? m.name : m.id}
-                      sub={m.name && m.name !== m.id ? m.id : undefined}
-                      onClick={() => void apply(activeId, m.id)}
-                    />
-                  ))
-                )}
-              </>
+              <ModelMenu
+                providerLabel={providerName(active)}
+                models={activeModels}
+                loading={modelsFor !== activeId}
+                currentModelId={currentModelId}
+                onPick={(id) => void apply(activeId, id)}
+              />
             )}
           </div>
         </>
@@ -188,16 +159,45 @@ export function ProviderModelPicker({ client, status }: { client: BackendClient;
   )
 }
 
-function MenuLabel({ children }: { children: ReactNode }) {
-  return <div className="px-3 pt-1.5 pb-1 text-[10px] font-mono uppercase tracking-wider text-faint">{children}</div>
+// ---------------------------------------------------------------------------
+// Derivations. The chip is small but reads a lot of state: what is selected,
+// how it is labelled, and how much of it is dimmed while a save is in flight.
+// Each is a pure lookup so the component reads as the chip it draws.
+// ---------------------------------------------------------------------------
+
+function activeSelection(status: AuthStatusResult | null) {
+  const activeId = status?.activeProvider ?? ''
+  const active = status?.providers.find((p) => p.id === activeId) ?? null
+  return {
+    activeId,
+    active,
+    configured: !!active?.configured,
+    activeModel: status?.activeModel ?? '',
+  }
 }
 
-function MenuRow({ label, sub, checked, onClick }: { label: string; sub?: string; checked?: boolean; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="w-full flex items-baseline gap-2 px-3 py-1.5 text-left hover:bg-surface2 transition-colors">
-      <span className="w-3 shrink-0 self-center text-[10px] text-accent">{checked ? '✓' : ''}</span>
-      <span className="text-xs text-ink truncate">{label}</span>
-      {sub && <span className="text-[10px] text-faint truncate">{sub}</span>}
-    </button>
-  )
+/** The model half shows the friendly name and keeps the raw id as the tooltip. */
+function chipLabels(activeModel: string, activeId: string, activeModels: AuthModel[]) {
+  return {
+    currentModelId: activeModel ? stripModelRef(activeModel, activeId) : '',
+    modelLabel: activeModel ? modelDisplayName(activeModel, activeId, activeModels) : 'choose model…',
+  }
+}
+
+function chipClass(busy: boolean): string {
+  return `flex items-center gap-1.5 rounded-md px-2 py-1 transition-colors ${busy ? 'opacity-60' : ''}`
+}
+
+function dotClass(configured: boolean): string {
+  return `w-1.5 h-1.5 rounded-full shrink-0 ${configured ? 'bg-accent' : 'bg-faint'}`
+}
+
+function modelTitle(configured: boolean, currentModelId: string): string {
+  return configured ? `Model: ${currentModelId || 'unset'} — click to pick` : 'Sign in to pick a model'
+}
+
+/** An unset model is a warning the session cannot run yet; a set one is plain text. */
+function modelClass(hasModel: boolean): string {
+  const tone = hasModel ? 'text-mute hover:text-ink' : 'text-warn hover:text-ink'
+  return `font-mono text-[10px] rounded px-0.5 -mx-0.5 transition-colors disabled:text-faint ${tone}`
 }

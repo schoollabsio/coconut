@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readProviderModel, withProviderModel } from '../yamlPatch'
+import { readProviderModel, withProviderModel } from './yamlPatch'
 
 // Mirrors the shipped DefaultSettingsYAML (internal/core/settings.go).
 const TEMPLATE = `# coconut settings

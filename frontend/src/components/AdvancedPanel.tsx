@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BackendClient } from '../backend'
 import { Cmd, type ConfigProblem, type SettingsValidateResult } from '../protocol'
 import { store } from '../store'
@@ -22,7 +22,7 @@ export function AdvancedPanel({ client }: { client: BackendClient }) {
   const validateSeq = useRef(0)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const runValidation = (text: string) => {
+  const runValidation = useCallback((text: string) => {
     const seq = ++validateSeq.current
     setValidating(true)
     void client
@@ -42,18 +42,16 @@ export function AdvancedPanel({ client }: { client: BackendClient }) {
       .finally(() => {
         if (seq === validateSeq.current) setValidating(false)
       })
-  }
+  }, [client])
 
   // Load current YAML when the panel mounts.
   useEffect(() => {
-    setSaveError(null)
     void client.command<{ yaml: string }>(Cmd.SettingsGet, {}).then((resp) => {
       const text = resp.ok && resp.payload ? resp.payload.yaml : '# failed to load settings\n'
       setYaml(text)
       runValidation(text)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [client, runValidation])
 
   useEffect(() => () => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current)

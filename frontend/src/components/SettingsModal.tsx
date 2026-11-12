@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { BackendClient } from '../backend'
 import { store, useUIState } from '../store'
 import { AdvancedPanel } from './AdvancedPanel'
-import { ProviderPanel } from './ProviderPanel'
+import { ProviderPanel } from './provider/ProviderPanel'
 
 type Panel = 'provider' | 'advanced'
 
@@ -17,7 +17,10 @@ export function SettingsModal({ client }: { client: BackendClient }) {
 
   // Default back to the Provider panel each time the modal opens.
   useEffect(() => {
-    if (open) setPanel('provider')
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPanel('provider')
+    }
   }, [open])
 
   useEffect(() => {
