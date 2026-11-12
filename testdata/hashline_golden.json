@@ -1,0 +1,89 @@
+{
+  "generator": "bun run pi-extension/hashline-golden.ts",
+  "hashAlphabet": "0123456789abcdefghjkmnpqrstvwxyz",
+  "hashLength": 4,
+  "fullHashLength": 12,
+  "comment": "SHA-256 of each line's UTF-8 bytes (one trailing CR removed), mapped to the alphabet via digest[i] & 31. See pi-extension/hashline.ts for the full contract.",
+  "cases": [
+    {
+      "line": "",
+      "hash": "3g42",
+      "full": "3g42rwwmtvm8"
+    },
+    {
+      "line": "a",
+      "hash": "aq1j",
+      "full": "aq1javxat2hk"
+    },
+    {
+      "line": "hello world",
+      "hash": "sd7s",
+      "full": "sd7skdy85ejq"
+    },
+    {
+      "line": "const x = 1;",
+      "hash": "z1bk",
+      "full": "z1bk31fk1cjj"
+    },
+    {
+      "line": "  \t  ",
+      "hash": "j2vz",
+      "full": "j2vz6tbavehd"
+    },
+    {
+      "line": "\treturn true;",
+      "hash": "hjrt",
+      "full": "hjrtzwa6vq07"
+    },
+    {
+      "line": "}",
+      "hash": "hbpa",
+      "full": "hbpam5vfa8rr"
+    },
+    {
+      "line": "{",
+      "hash": "2znp",
+      "full": "2znpv16gbkjr"
+    },
+    {
+      "line": "0",
+      "hash": "zcb6",
+      "full": "zcb6z8frsjrc"
+    },
+    {
+      "line": "# comment",
+      "hash": "e3ys",
+      "full": "e3ysxsqwp0e7"
+    },
+    {
+      "line": "line with unicode: héllo wörld",
+      "hash": "vyv8",
+      "full": "vyv82p22mxrf"
+    },
+    {
+      "line": "emoji 🐍 and 漢字",
+      "hash": "076t",
+      "full": "076tmtg46kwd"
+    },
+    {
+      "line": "backslash \\ quote \" dollar $1 & ( ) [ ]",
+      "hash": "ywzd",
+      "full": "ywzd5jga22v1"
+    },
+    {
+      "line": "x\r",
+      "hash": "dhp2",
+      "full": "dhp2q6g412w9"
+    },
+    {
+      "line": "\t\tdeeply\tindented\ttext\t",
+      "hash": "0ard",
+      "full": "0ardfs2wvcbb"
+    },
+    {
+      "line": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "hash": "90a7",
+      "full": "90a7azr2sj37"
+    }
+  ]
+}

@@ -5,24 +5,26 @@ import (
 	"testing"
 )
 
+func strptr(s string) *string { return &s }
+
 func TestApplyEdits(t *testing.T) {
 	old := "line1\nonClick={() => onDelete(index)}\nline3\n"
-	got, err := applyEdits(old, []editPair{{OldText: "onDelete(index)", NewText: "onDelete(todo.id)"}})
+	got, err := applyEdits(old, []editPair{{OldText: strptr("onDelete(index)"), NewText: "onDelete(todo.id)"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(got, "onDelete(todo.id)") || strings.Contains(got, "onDelete(index)") {
-		t.Fatalf("unexpected result: %q", got)
+		t.Fatalf("unexpected legacy result: %q", got)
 	}
 
 	// Creation: empty oldText replaces wholesale.
-	got, err = applyEdits("", []editPair{{OldText: "", NewText: "# new file\n"}})
+	got, err = applyEdits("", []editPair{{OldText: strptr(""), NewText: "# new file\n"}})
 	if err != nil || got != "# new file\n" {
 		t.Fatalf("create case: %q err=%v", got, err)
 	}
 
-	// Missing anchor errors.
-	if _, err := applyEdits("abc", []editPair{{OldText: "zzz", NewText: "q"}}); err == nil {
+	// Missing legacy anchor errors.
+	if _, err := applyEdits("abc", []editPair{{OldText: strptr("zzz"), NewText: "q"}}); err == nil {
 		t.Fatal("expected error for missing oldText")
 	}
 }

@@ -61,8 +61,11 @@ cp "$PI_PKG/package.json" "$OUT_DIR/package.json"
 [[ -f "$PI_PKG/README.md" ]] && cp "$PI_PKG/README.md" "$OUT_DIR/README.md"
 [[ -f "$PI_PKG/CHANGELOG.md" ]] && cp "$PI_PKG/CHANGELOG.md" "$OUT_DIR/CHANGELOG.md"
 
-# Our extension travels with the sidecar.
+# Our extension travels with the sidecar. coconut.ts imports its hashline module
+# from a sibling file (pi loads the entry through jiti, which resolves relative
+# imports), so both files must land next to each other.
 cp "$ROOT/pi-extension/coconut.ts" "$OUT_DIR/coconut-extension.ts" 2>/dev/null || true
+cp "$ROOT/pi-extension/hashline.ts" "$OUT_DIR/hashline.ts" 2>/dev/null || true
 
 # Login helper (coconut-login): headless driver for pi's auth flows.
 # Self-reference import ⇒ the entry must live inside the pi package while

@@ -8,27 +8,50 @@ import (
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
-// editPair is one exact-match replacement from a propose_edit call.
+// editPair is one propose_edit replacement. A non-empty Hash selects a hashline
+// anchor (see hashline.go); otherwise OldText uses legacy exact matching.
 type editPair struct {
-	OldText string `json:"oldText"`
-	NewText string `json:"newText"`
+	Hash    string  `json:"hash"`
+	EndHash string  `json:"endHash"`
+	Insert  string  `json:"insert"`
+	OldText *string `json:"oldText"`
+	NewText string  `json:"newText"`
 }
 
-// applyEdits applies exact-match replacements sequentially, mirroring
-// the extension's semantics (first occurrence wins; oldText "" on a
-// missing file means create with newText).
+// applyEdits applies replacements sequentially, mirroring the extension's
+// semantics so the diff rendered from the result is the content the extension
+// writes. A hash edit targets the line(s) whose digest matches; a legacy edit
+// replaces the first occurrence of oldText. A sole legacy empty oldText creates
+// or overwrites the complete file.
 func applyEdits(oldContent string, edits []editPair) (string, error) {
 	content := oldContent
 	for i, e := range edits {
-		if e.OldText == "" {
+		if e.Hash != "" {
+			next, err := applyHashlineEdit(content, hashlineEdit{
+				Hash:    e.Hash,
+				EndHash: e.EndHash,
+				Insert:  e.Insert,
+				NewText: e.NewText,
+			}, i+1)
+			if err != nil {
+				return "", err
+			}
+			content = next
+			continue
+		}
+
+		if e.OldText == nil {
+			return "", fmt.Errorf("edit %d: legacy edits must provide oldText", i+1)
+		}
+		if *e.OldText == "" {
 			content = e.NewText
 			continue
 		}
-		idx := strings.Index(content, e.OldText)
+		idx := strings.Index(content, *e.OldText)
 		if idx < 0 {
-			return "", fmt.Errorf("edit %d: oldText not found in file", i)
+			return "", fmt.Errorf("edit %d: oldText not found in file", i+1)
 		}
-		content = content[:idx] + e.NewText + content[idx+len(e.OldText):]
+		content = content[:idx] + e.NewText + content[idx+len(*e.OldText):]
 	}
 	return content, nil
 }

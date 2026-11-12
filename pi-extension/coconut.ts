@@ -49,6 +49,10 @@ import {
 	createFindTool,
 	createLsTool,
 } from "@earendil-works/pi-coding-agent";
+// Hashline addressing — the hash column read shows and the resolver
+// propose_edit uses. Shared with the Go backend through
+// testdata/hashline_golden.json; see hashline.ts for the contract.
+import { applyHashlineEdit, withHashColumn } from "./hashline.ts";
 import { Type, type Static } from "typebox";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
@@ -68,13 +72,17 @@ const ProposeEditParamsSchema = Type.Object({
 	}),
 	edits: Type.Array(
 		Type.Object({
-			oldText: Type.String({
-				description:
-					"Exact text to find in the current file. A single edit with an empty oldText creates/overwrites the whole file with newText.",
-			}),
-			newText: Type.String({ description: "Replacement text." }),
+			hash: Type.Optional(Type.String({ description: "Hash of the line to address, copied from read's hash column. Longer is fine (up to 12 chars) to disambiguate; the match is a prefix." })),
+			endHash: Type.Optional(Type.String({ description: "Hash of the last line of an inclusive replacement range. Defaults to hash, i.e. a single line." })),
+			insert: Type.Optional(Type.String({ description: "Insert beside the anchored line instead of replacing it: \"before\" or \"after\". Requires newText and cannot combine with endHash." })),
+			oldText: Type.Optional(Type.String({ description: "Legacy exact-match anchor; use only when hash is omitted. Must match the current content exactly." })),
+			newText: Type.String({ description: "Replacement text for the anchored lines; \"\" deletes them." }),
 		}),
-		{ minItems: 1, description: "Exact-match replacements, applied sequentially in order." },
+		{
+			minItems: 1,
+			description:
+				"Edits to apply, in order. Prefer hashline edits: copy a line's hash from read's hash column into `hash` and give `newText` (`\"\"` deletes the line); `endHash` replaces an inclusive range, `insert` adds lines beside the anchor. A hash is a digest of the line's own content, so earlier edits in the same batch cannot shift it onto the wrong line. A stale or ambiguous hash is refused with an error — re-read the file (or lengthen the hash) instead of guessing. Legacy mode (omit `hash`, provide `oldText`) replaces the first exact occurrence; to create or fully overwrite a file, pass a single legacy edit with `oldText: \"\"` and `newText` set to the complete file content.",
+		},
 	),
 });
 export type ProposeEditParams = Static<typeof ProposeEditParamsSchema>;
@@ -126,7 +134,7 @@ export type RunParams = Static<typeof RunParamsSchema>;
 const ReadSchemaWithWhatWhy = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
 	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+		hashes: Type.Optional(Type.Boolean({ description: "Prefix each content line with the hash propose_edit addresses it by (default true). Pass false for raw file content." })),
 	what: Type.String({ description: "Short summary of what this tool call does (shown to the user)." }),
 	why: Type.String({ description: "Rationale for why this tool call is needed (shown to the user)." }),
 	groupLabel: Type.String({
@@ -284,6 +292,68 @@ function isDangerousSegment(seg: string): boolean {
 	return false;
 }
 
+/**
+ * Apply a whole propose_edit batch sequentially and return the resulting text.
+ * Hashline anchors resolve against the file as it stands at that point in the
+ * batch, which is what keeps them pointing at the same line after an earlier
+ * edit inserts or deletes above them. Legacy exact-match edits behave as
+ * before. Throws on the first anchor that cannot be resolved, so callers can
+ * dry-run a proposal before asking the user to approve it.
+ */
+function applyProposalEdits(content: string, edits: ProposeEditParams["edits"], notes: string[] = []): string {
+	let next = content;
+	for (let i = 0; i < edits.length; i++) {
+		const edit = edits[i];
+		if (edit.hash !== undefined) {
+			next = applyHashlineEdit(
+				next,
+				{ hash: edit.hash, endHash: edit.endHash, insert: edit.insert, newText: edit.newText },
+				i + 1,
+			);
+			continue;
+		}
+
+		const oldText = edit.oldText as string;
+		const occurrences = countOccurrences(next, oldText);
+		if (occurrences === 0) throw new Error(`edit #${i + 1}: oldText not found: "${preview(oldText)}"`);
+		if (occurrences > 1) notes.push(`edit #${i + 1}: oldText occurred ${occurrences} times; replaced the first occurrence only`);
+		next = replaceFirst(next, oldText, edit.newText);
+	}
+	return next;
+}
+
+/**
+ * Prefix a built-in read result with the hash column propose_edit anchors to.
+ *
+ * The column is computed from the FILE, not from the output: only output lines
+ * that verbatim match the file's own lines get a hash, so pi's appended
+ * "[Showing lines …]" notices never look like anchors and an offset read still
+ * numbers its lines by their real position. When the file cannot be re-read
+ * (missing, unreadable, replaced mid-call) the result passes through
+ * unannotated — a worse lookup, never a wrong one.
+ */
+async function annotateReadResult(result: unknown, cwd: string, path: unknown, offset = 1): Promise<unknown> {
+	if (!result || typeof result !== "object") return result;
+	const items = (result as { content?: unknown }).content;
+	if (!Array.isArray(items) || typeof path !== "string" || path === "") return result;
+	let fileContent: string;
+	try {
+		fileContent = await readFile(toAbsolute(cwd, cleanPath(path)), "utf8");
+	} catch {
+		return result;
+	}
+	const startLine = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 1;
+	let annotated = false;
+	const next = items.map((item) => {
+		if (!item || typeof item !== "object") return item;
+		const entry = item as { type?: string; text?: unknown };
+		if (entry.type !== "text" || typeof entry.text !== "string") return item;
+		annotated = true;
+		return { ...entry, text: withHashColumn(entry.text, fileContent, startLine) };
+	});
+	return annotated ? { ...(result as object), content: next } : result;
+}
+
 const execAsync = promisify(exec);
 
 // ---------------------------------------------------------------------------
@@ -304,7 +374,7 @@ You are running inside the Coconut desktop app. Its environment differs from a s
 - The built-in \`edit\` and \`write\` tools do NOT exist here. The ONLY way to create or modify files is the \`propose_edit\` tool.
 - \`propose_edit\` blocks on explicit user approval before anything is written, so:
   - Gather context first with \`read\`, \`grep\`, \`find\`, \`ls\` (and read-only \`run\` commands) before proposing a change.
-  - Propose complete, well-formed edits: every \`oldText\` must match the file's current content exactly, and give each proposal a clear \`what\` and \`why\` — the user reads them when deciding.
+  - Propose complete, well-formed edits addressed by line hash: \`read\` prints a short hash in front of every line, and an edit is \`{ hash, newText }\` (\`newText: ""\` deletes the line, \`endHash\` spans a range, \`insert\` adds lines beside the anchor). Hashes identify lines by content, so a batch of edits cannot drift onto the wrong line the way line numbers do. An unknown or ambiguous hash is an error, never a guess: re-read the file and retry with the current hash, or lengthen it to disambiguate. Legacy exact-match edits (omit \`hash\`, provide \`oldText\`) still work and must match the current content exactly; a whole-file create stays a single legacy edit with \`oldText: ""\`. Give every proposal a clear \`what\` and \`why\` — the user reads them when deciding.
   - Never assume a proposal was approved; check the tool result.
   - If the user dismisses a proposal, do NOT retry the same edit. Stop and wait — the user will follow up in chat with what to change.
 - Use \`show_content\` to display markdown documents (reports, plans, notes, summaries) in the user's content panel. It is NOT a file-writing tool: it creates no project files and modifies nothing — use \`propose_edit\` for anything that belongs in the project.
@@ -334,11 +404,11 @@ export default function (pi: ExtensionAPI) {
 		name: "propose_edit",
 		label: "Propose Edit",
 		description:
-			"Propose a modification to a file. This is the ONLY way to create or modify files in this environment (built-in edit/write are unavailable). Every proposal is shown to the user and applied only if approved. For an existing file, each edit's oldText must match the current file content exactly; edits apply sequentially. To create a new file (or fully overwrite one), pass a single edit with oldText set to the empty string and newText set to the complete file content.",
+			"Propose a modification to a file. This is the ONLY way to create or modify files in this environment (built-in edit/write are unavailable). Every proposal is shown to the user and applied only if approved. Address edits with the hash that read prints in front of each line: { hash, newText } replaces that line, { hash, endHash, newText } replaces the inclusive range, { hash, insert: \"before\" | \"after\", newText } adds lines beside the anchor, and { hash, newText: \"\" } deletes it. A hash identifies a line by content, so it stays valid even when earlier edits in the same call shift line numbering; a stale or ambiguous hash fails with an error instead of editing the wrong line — re-read and retry. Legacy exact matching (omit hash, provide oldText) replaces the first occurrence and must match the current content exactly. To create or fully overwrite a file, pass a single legacy edit with oldText set to the empty string and newText set to the complete file content. Edits apply sequentially.",
 		promptSnippet: "Propose file edits for user approval (the only file-modification channel)",
 		promptGuidelines: [
 			"Use propose_edit for EVERY file creation or modification; built-in edit/write tools are not available in this environment.",
-			"Use propose_edit only after reading the target file, with oldText matching its current content exactly.",
+			"Address each edit with the hash read prints in front of the line (`{ hash, newText }`); prefer that over legacy oldText. A hash identifies the line by content, so it cannot land on the wrong line after another edit shifts numbering. On an unknown-hash or ambiguity error, re-read the file and retry with a current hash (or a longer prefix of it) — never guess.",
 		],
 		parameters: ProposeEditParamsSchema,
 		prepareArguments(args) {
@@ -357,12 +427,17 @@ export default function (pi: ExtensionAPI) {
 			// (The per-file lock is held while the user decides; acceptable here
 			// because approvals are the serialization point Coconut wants anyway.)
 			return withFileMutationQueue(absPath, async () => {
-				const wholeFile = edits.length === 1 && edits[0].oldText === "";
+				// An edit addresses lines by hash (hashline) or by exact text (legacy).
+				const isLegacy = (edit: ProposeEditParams["edits"][number]) => edit.hash === undefined;
+				const wholeFile = edits.length === 1 && isLegacy(edits[0]) && edits[0].oldText === "";
 
-				if (!wholeFile && edits.some((e) => e.oldText === "")) {
+				if (!wholeFile && edits.some((e) => isLegacy(e) && e.oldText === "")) {
 					throw new Error(
-						`propose_edit: an empty oldText (whole-file create/overwrite) is only allowed as the sole edit; got ${edits.length} edits.`,
+						`propose_edit: an empty oldText (whole-file create/overwrite) is only allowed as the sole legacy edit; got ${edits.length} edits.`,
 					);
+				}
+				if (edits.some((e) => isLegacy(e) && e.oldText === undefined)) {
+					throw new Error("propose_edit: every edit needs a hash from read's hash column, or (legacy) an oldText to match exactly.");
 				}
 
 				let current: string | null = null;
@@ -378,19 +453,14 @@ export default function (pi: ExtensionAPI) {
 					);
 				}
 
-				// Verify every oldText BEFORE asking the user anything. Throwing marks
-				// the tool result isError:true (pi has no isError field on tool results).
+				// Resolve every anchor and apply the whole batch to an in-memory copy
+				// BEFORE asking the user: a stale or ambiguous hash must fail here, not
+				// after the user approved a diff that cannot actually be produced.
 				if (current !== null && !wholeFile) {
-					const misses: string[] = [];
-					for (let i = 0; i < edits.length; i++) {
-						if (!current.includes(edits[i].oldText)) {
-							misses.push(`edit #${i + 1} oldText not found: "${preview(edits[i].oldText)}"`);
-						}
-					}
-					if (misses.length > 0) {
-						throw new Error(
-							`propose_edit: ${misses.length} edit(s) do not match the current content of ${path}. Re-read the file and propose against its current content.\n${misses.join("\n")}`,
-						);
+					try {
+						applyProposalEdits(current, edits);
+					} catch (err) {
+						throw new Error(`propose_edit: ${path} cannot be edited. Re-read the file and propose against its current content.\n${err instanceof Error ? err.message : String(err)}`);
 					}
 				}
 
@@ -418,21 +488,7 @@ export default function (pi: ExtensionAPI) {
 				if (wholeFile) {
 					next = edits[0].newText;
 				} else {
-					next = current as string;
-					for (let i = 0; i < edits.length; i++) {
-						const { oldText, newText } = edits[i];
-						const occurrences = countOccurrences(next, oldText);
-						if (occurrences === 0) {
-							throw new Error(
-								`propose_edit: edit #${i + 1} oldText no longer matches after applying earlier edit(s): "${preview(oldText)}"`,
-							);
-						}
-						if (occurrences > 1) {
-							// Ambiguous anchor: replace the first occurrence and tell the agent.
-							notes.push(`edit #${i + 1}: oldText occurred ${occurrences} times; replaced the first occurrence only`);
-						}
-						next = replaceFirst(next, oldText, newText);
-					}
+					next = applyProposalEdits(current as string, edits, notes);
 				}
 
 				await mkdir(dirname(absPath), { recursive: true });
@@ -585,9 +641,12 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "read",
 		label: "Read",
-		description: "Read the contents of a file with line offset and limit support.",
+		description: "Read the contents of a file with line offset and limit support. Each content line is prefixed with a short hash and a pipe (e.g. \"a3kf | text\"), except line 1 which shows the full digest as a calibration sample; that hash is the anchor propose_edit addresses lines by. Pass hashes:false to get raw content without the column.",
 		promptSnippet: "Read file contents",
-		promptGuidelines: ["Use read to examine files instead of cat or sed."],
+		promptGuidelines: [
+			"Use read to examine files instead of cat or sed.",
+			"Copy a line's hash from read's hash column into propose_edit's hash field — it is the anchor for edits and stays correct when earlier edits shift line numbers.",
+		],
 		parameters: ReadSchemaWithWhatWhy,
 		prepareArguments(args) {
 			if (!args || typeof args !== "object") return args;
@@ -599,8 +658,12 @@ export default function (pi: ExtensionAPI) {
 		},
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
 			const tool = createReadTool(ctx.cwd);
-			const { what: _what, why: _why, groupLabel: _groupLabel, ...rest } = params;
-			return tool.execute(toolCallId, rest, signal, onUpdate);
+			const { what: _what, why: _why, groupLabel: _groupLabel, hashes, ...rest } = params;
+			const result = await tool.execute(toolCallId, rest, signal, onUpdate);
+			// The hash column is propose_edit's addressing scheme: one digest per
+			// line, so an edit names the line it was read from instead of a line
+			// number that an earlier edit may already have invalidated.
+			return hashes === false ? result : annotateReadResult(result, ctx.cwd, rest.path, rest.offset);
 		},
 	});
 

@@ -29,21 +29,43 @@ pi --mode rpc --no-extensions \
 
 ### 1. `propose_edit` tool (approval-gated file modification)
 
-Parameters: `path`, `what` (short summary), `why` (rationale), and `edits[]`
-of `{ oldText, newText }` exact-match replacements, applied sequentially.
-A single edit with `oldText: ""` means create/overwrite the whole file with
+Parameters: `path`, `what` (short summary), `why` (rationale), and sequential
+`edits[]`. Edits address lines by **hash**: `read` prints a short digest in front
+of every line (`a3kf | text`), and an edit is one of
+
+| Edit | Effect |
+| --- | --- |
+| `{ hash, newText }` | replace that line |
+| `{ hash, endHash, newText }` | replace the inclusive range (endHash resolves at or after hash) |
+| `{ hash, insert: "before" \| "after", newText }` | insert beside the anchor, leaving it intact |
+| `{ hash, newText: "" }` | delete the line(s), newline included |
+| `{ oldText, newText }` | legacy: replace the first exact occurrence |
+
+A hash is a digest of the line's own text, so it keeps pointing at the same line
+when an earlier edit in the same batch shifts line numbers, and the hash of a
+line that has since changed is simply gone. Hashes are 4–12 characters (Crockford
+base32) and match by prefix, so a longer hash narrows an ambiguous match. An
+unknown or ambiguous hash **fails with an error** — it never edits a guessed line.
+A single legacy edit with `oldText: ""` means create/overwrite the whole file with
 `newText`.
+
+Hashing and resolution live in `hashline.ts`, mirrored in Go by
+`internal/core/hashline.go`; `testdata/hashline_golden.json` pins both halves to
+the same digests, so the diff the user approves is the content that gets written.
+`read` adds the hash column by default (`hashes: false` returns raw content).
 
 Flow:
 
-1. Read the target file (if it exists). For an existing file, verify every
-   `oldText` occurs in the current content. On mismatch the tool **throws
-   before touching `ctx.ui`** — pi turns thrown errors into `isError: true`
-   tool results, and the agent is told to re-read the file.
+1. Read the target file (if it exists). For an existing file, apply the whole
+   batch to an in-memory copy: every hash must resolve to exactly one line, and
+   legacy `oldText` must occur in the current content. On failure the tool
+   **throws before touching `ctx.ui`** — pi turns thrown errors into
+   `isError: true` tool results, and the agent is told to re-read the file.
 2. Ask the user via the approval wire contract (below).
-3. On approval: apply the edits (an `oldText` occurring multiple times
-   replaces only the first occurrence, noted in the result), create parent
-   directories, write the file, and return `Applied N edit(s) to <path>`.
+3. On approval: apply the edits and write. A legacy `oldText` occurring multiple
+   times replaces only the first occurrence, noted in the result. The tool
+   creates parent directories, writes the file, and returns
+   `Applied N edit(s) to <path>`.
 4. On dismissal: return a non-error result telling the agent not to retry and
    to wait for the user's chat follow-up.
 
@@ -121,7 +143,7 @@ untrusted repo content cannot weaken the approval gates.
 
 | Gate          | `title`                 | `message` (stringified JSON)                                          |
 | ------------- | ----------------------- | --------------------------------------------------------------------- |
-| propose_edit  | `coconut://propose_edit` | `{ "toolCallId", "path", "what", "why", "edits": [{oldText,newText}] }` |
+| propose_edit  | `coconut://propose_edit` | `{ "toolCallId", "path", "what", "why", "edits": [{hash?,endHash?,insert?,oldText?,newText}] }` |
 | bash          | `coconut://bash`         | `{ "toolCallId", "command" }`                                          |
 
 Request on stdout (from pi):
@@ -132,7 +154,7 @@ Request on stdout (from pi):
   "id": "uuid-1",
   "method": "confirm",
   "title": "coconut://propose_edit",
-  "message": "{\"toolCallId\":\"call_abc\",\"path\":\"src/app.go\",\"what\":\"...\",\"why\":\"...\",\"edits\":[{\"oldText\":\"...\",\"newText\":\"...\"}]}"
+  "message": "{\"toolCallId\":\"call_abc\",\"path\":\"src/app.go\",\"what\":\"...\",\"why\":\"...\",\"edits\":[{\"hash\":\"k7qm\",\"newText\":\"...\"}]}"
 }
 ```
 
