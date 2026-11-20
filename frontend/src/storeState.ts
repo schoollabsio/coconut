@@ -17,6 +17,7 @@ import type {
   ToolCall,
   WorkspaceInfo,
 } from './protocol'
+import type { Deadline } from './autoApprove'
 
 export interface Notification {
   id: number
@@ -45,6 +46,19 @@ export interface AuthState {
   modelsFor: string
   /** Active login flow (at most one). */
   login: AuthLoginFlow | null
+}
+
+/** Auto-approve (reading-time approval timeouts). Purely client-side: the
+ *  backend has no notion of a clock, so this slice never appears in a
+ *  snapshot — it is re-derived from the pending set on every sync. */
+export interface AutoApproveState {
+  /** This window's master switch (the header chip). Off by default: the mode
+   *  approves on silence, so it is opt-in — and per window. */
+  on: boolean
+  /** approvalId -> its clock. Cancelled / spent clocks stay in the map on
+   *  purpose: they must survive re-plans so a decision the user took back is
+   *  never quietly re-armed. */
+  deadlines: Record<string, Deadline>
 }
 
 export interface UIState {
@@ -84,6 +98,8 @@ export interface UIState {
   notifications: Notification[]
   /** Expanded group keys for the tool call log (UI-only, not synced to backend). Groups default to collapsed. */
   expandedGroups: Set<string>
+  /** Auto-approve clocks (UI-only; see AutoApproveState). */
+  autoApprove: AutoApproveState
 }
 
 export const initialState: UIState = {
@@ -113,4 +129,5 @@ export const initialState: UIState = {
   },
   notifications: [],
   expandedGroups: new Set<string>(),
+  autoApprove: { on: false, deadlines: {} },
 }

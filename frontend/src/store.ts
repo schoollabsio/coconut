@@ -23,6 +23,14 @@ import type { Notification, UIState } from './storeState'
 import { initialState } from './storeState'
 import { snapshotPatch } from './storeSnapshot'
 import { applyStreamPayload } from './storeStreams'
+import type { ApprovalDecision } from './approvalActions'
+import {
+  disableClocks as disableAutoClocks,
+  enableClocks as enableAutoClocks,
+  spendClock as spendAutoClock,
+  syncClocks as syncAutoClocks,
+  type ClockTimers,
+} from './storeClocks'
 
 // The state shape lives in storeState.ts; re-exported so existing call sites
 // keep importing these types from './store'.
@@ -175,6 +183,44 @@ export class UIStore implements EventCtx {
   }
 
   // ------------------------------------------------------------------
+  // auto-approve: reading-time approval timeouts
+  // Timing lives in storeClocks.ts, the arithmetic in autoApprove.ts. Firing
+  // sends the ordinary agent.approval.respond, so the backend cannot tell a
+  // timer from a click (Q5) and nothing here is domain truth.
+  // ------------------------------------------------------------------
+
+  /** Injected by the bootstrapper alongside `resync`: the transport for one
+   *  approval decision. Kept out of the store so the timer is testable with a
+   *  fake sender (and the store keeps its no-Wails import graph). */
+  respondApproval: ((approvalId: string, decision: ApprovalDecision) => Promise<boolean>) | null = null
+
+  private clocks: ClockTimers = new Map()
+
+  /** Re-derive the clocks from the current pending set — a newly pending
+   *  approval gets one, an existing one keeps what it had, resolved ones are
+   *  dropped. Clears everything while off. */
+  syncClocks(): void {
+    syncAutoClocks(this, this.clocks)
+  }
+
+  /** The header switch, and it is forward-only: turning it on does NOT light a
+   *  countdown under an approval that was already waiting — those stay theirs
+   *  to decide, marked untimed — so only requests arriving from now on are ever
+   *  armed. Turning it off kills every clock immediately. */
+  setAutoApprove(on: boolean) {
+    if (on === this.state.autoApprove.on) return
+    if (on) enableAutoClocks(this, this.clocks)
+    else disableAutoClocks(this, this.clocks)
+  }
+
+  /** A card's "cancel timer": this decision is the user's to make by hand, so
+   *  its clock is spent for good — no resume, no re-arming later. */
+  cancelApprovalClock(approvalId: string) {
+    if (this.state.autoApprove.deadlines[approvalId]?.mode !== 'running') return
+    spendAutoClock(this, this.clocks, approvalId)
+  }
+
+  // ------------------------------------------------------------------
   // backend messages
   // ------------------------------------------------------------------
 
@@ -208,6 +254,9 @@ export class UIStore implements EventCtx {
     this.finalized.clear()
     if (snap.windowName) this.windowName = snap.windowName
     this.set(snapshotPatch(this.state, snap))
+    // The snapshot is authoritative for what is pending, so the clocks are
+    // re-derived from it (running ones survive by id; vanished ones are dropped).
+    this.syncClocks()
   }
 
   private applyEvent(ev: BackendEvent) {

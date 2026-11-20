@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { BackendClient, BackendUnavailableError } from './backend'
 import { Cmd, type BackendMessage } from './protocol'
-import { pickApprovalToRespond } from './approvalActions'
+import { pickApprovalToRespond, respondToApproval } from './approvalActions'
 import { store, useUIState } from './store'
 import { Chat } from './components/Chat'
 import { ColumnGrid } from './components/ColumnGrid'
@@ -52,6 +52,13 @@ export default function App() {
       }
     }
     store.resync = () => void resync()
+
+    // The auto-approve timer needs the same transport a click uses. Injected
+    // rather than imported so the store stays free of the Wails bindings. The
+    // client is stateless, so a remount replacing it is harmless — no cleanup
+    // needed (and nulling it here would strand any clock fired mid-remount).
+    store.respondApproval = (approvalId, decision) =>
+      respondToApproval(client, approvalId, decision)
 
     let unsubscribe: (() => void) | undefined
     try {

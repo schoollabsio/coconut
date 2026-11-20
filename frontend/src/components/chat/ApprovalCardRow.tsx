@@ -2,6 +2,7 @@ import { memo } from 'react'
 import type { BackendClient } from '../../backend'
 import { Cmd } from '../../protocol'
 import { store } from '../../store'
+import { ApprovalClock } from '../ApprovalClock'
 
 type ApprovalCardRowProps = {
   railKey: string
@@ -49,6 +50,7 @@ export default memo(function ApprovalCardRow({
         {what && <div className="what">{what}</div>}
         {why && <div className="why">{why}</div>}
         {kind === 'bash' && command && <pre className="command">{command}</pre>}
+        <ApprovalClock approval={{ id: approvalId, what, why }} className="mt-2 text-[11px]" />
         <div className="actions">
           <button type="button" onClick={approve} title="Approve (⌘+Return)" className="btn-approve">
             Approve

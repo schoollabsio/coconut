@@ -1,6 +1,7 @@
 import { BackendClient } from '../../backend'
 import { Cmd, type ApprovalRequest } from '../../protocol'
 import { store } from '../../store'
+import { ApprovalClock } from '../ApprovalClock'
 import { DiffView } from './DiffView'
 import { Field, Meta, Prose } from './fields'
 
@@ -32,6 +33,7 @@ export function ApprovalView({ approval, client }: { approval: ApprovalRequest; 
       {approval.kind === 'propose_edit' ? <EditBody diff={approval.diff} /> : <CommandBody command={approval.command} />}
 
       <div className="flex justify-end items-center gap-3">
+        <ApprovalClock approval={approval} className="text-xs" />
         <button
           onClick={() => respond('dismiss')}
           title="Skip this for now — tell the agent what to change in chat"

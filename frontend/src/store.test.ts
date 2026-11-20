@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UIStore } from './store'
+import { AUTO_APPROVE_DEFAULTS } from './autoApprove'
 import type { BackendEvent, SnapshotMessage } from './protocol'
 import { Ev, Stream } from './protocol'
 
@@ -535,5 +536,105 @@ describe('content pin + library', () => {
     expect(s.state.contentPinned).toBe(false)
     expect(s.state.content).toBeNull()
     expect(s.state.contentLibrary).toHaveLength(1)
+  })
+})
+
+describe('UIStore auto-approve', () => {
+  const approval = (id: string) => ({
+    id,
+    kind: 'propose_edit' as const,
+    title: 'coconut://propose_edit',
+    path: 'a.ts',
+    what: 'Fix typo',
+    why: 'spelling',
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** A store with one approval already pending, with the mode off or on. */
+  function withApproval(on: boolean) {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    if (on) s.setAutoApprove(true)
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, approval('ap-1')))
+    return s
+  }
+
+  it('is off by default: an arriving approval arms no clock', () => {
+    const s = withApproval(false)
+    expect(s.state.autoApprove.on).toBe(false)
+    expect(s.state.autoApprove.deadlines).toEqual({})
+  })
+
+  it('arms a clock on request and drops it on resolve', () => {
+    const s = withApproval(true)
+    expect(s.state.autoApprove.deadlines['ap-1'].mode).toBe('running')
+    s.applyBackendMessage(ev(3, Ev.ApprovalResolved, { approvalId: 'ap-1' }))
+    expect(s.state.autoApprove.deadlines['ap-1']).toBeUndefined()
+  })
+
+  it('cancels one card\'s clock without touching the others', () => {
+    const s = withApproval(true)
+    s.applyBackendMessage(ev(3, Ev.ApprovalRequested, approval('ap-2')))
+    s.cancelApprovalClock('ap-1')
+    expect(s.state.autoApprove.deadlines['ap-1'].mode).toBe('cancelled')
+    expect(s.state.autoApprove.deadlines['ap-2'].mode).toBe('running')
+  })
+
+  it('clears every clock on switch-off, and switch-on never re-arms what was already waiting', () => {
+    const s = withApproval(true)
+    expect(s.state.autoApprove.deadlines['ap-1'].mode).toBe('running')
+
+    s.setAutoApprove(false)
+    expect(s.state.autoApprove.deadlines).toEqual({})
+
+    // Forward-only: this approval was waiting before the second switch-on, so
+    // it comes back untimed rather than on a fresh fuse.
+    s.setAutoApprove(true)
+    expect(s.state.autoApprove.deadlines['ap-1'].mode).toBe('manual')
+  })
+
+  it('arms only a request that arrives after the switch was turned on', () => {
+    const s = new UIStore()
+    s.applyBackendMessage(snap(1))
+    // Pending while off: no clock at all.
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, approval('ap-old')))
+    expect(s.state.autoApprove.deadlines['ap-old']).toBeUndefined()
+
+    s.setAutoApprove(true)
+    s.applyBackendMessage(ev(3, Ev.ApprovalRequested, approval('ap-new')))
+    expect(s.state.autoApprove.deadlines['ap-old'].mode).toBe('manual')
+    expect(s.state.autoApprove.deadlines['ap-new'].mode).toBe('running')
+  })
+
+  it('sends allow through the injected transport when a clock expires', () => {
+    const sent: string[] = []
+    const s = new UIStore()
+    s.respondApproval = async (approvalId, decision) => {
+      sent.push(`${decision}:${approvalId}`)
+      return true
+    }
+    s.applyBackendMessage(snap(1))
+    s.setAutoApprove(true)
+    s.applyBackendMessage(ev(2, Ev.ApprovalRequested, approval('ap-1')))
+
+    vi.advanceTimersByTime(AUTO_APPROVE_DEFAULTS.floorMs - 1)
+    expect(sent).toEqual([])
+    vi.advanceTimersByTime(1)
+    expect(sent).toEqual(['allow:ap-1'])
+  })
+
+  it('re-derives clocks from a snapshot, keeping a cancelled decision', () => {
+    const s = withApproval(true)
+    s.cancelApprovalClock('ap-1')
+    const restored = snap(2)
+    restored.state.pendingApprovals = [approval('ap-1')]
+    s.applyBackendMessage(restored)
+    expect(s.state.autoApprove.deadlines['ap-1'].mode).toBe('cancelled')
   })
 })

@@ -22,6 +22,9 @@ export interface EventCtx {
   setAgent(patch: Partial<UIState['agent']>): void
   pushNotification(level: Notification['level'], message: string): void
   beginAuthLogin(payload: AuthLoginStartPayload & { loginId: string }): void
+  /** Re-derive the auto-approve clocks from the new pending set: arm what is
+   *  new, keep what is running, drop what is resolved. No-op while off. */
+  syncClocks(): void
   /** Ids finalized by `agent.message.appended`; guards late stream flushes. */
   finalized: Set<string>
   /** Ask the bootstrapper for a fresh snapshot (history rebuilt behind us). */

@@ -5,6 +5,7 @@ import type { AgentSummary } from '../protocol'
 import { store, useUIState } from '../store'
 import { useAuthStatus } from '../useAuthStatus'
 import { ProviderModelPicker } from './ProviderModelPicker'
+import { AutoApproveToggle } from './AutoApproveToggle'
 
 /** Header row: agent name + agent/session controls, workspace path (click
  *  to change), settings gear. */
@@ -108,6 +109,7 @@ export function Header({ client }: { client: BackendClient }) {
         </span>
       </button>
       <div className="ml-auto flex items-center gap-1">
+        <AutoApproveToggle />
         <ProviderModelPicker client={client} status={authStatus} />
         <button
           aria-label="Open settings"

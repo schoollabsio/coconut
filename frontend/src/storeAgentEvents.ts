@@ -110,6 +110,7 @@ export const APPROVAL_EVENT_HANDLERS: Record<string, EventHandler> = {
       contentPinned: false, // a new approval is an attention magnet
       agent: { ...ctx.state.agent, status: 'awaiting_tool_approval', toolCalls },
     })
+    ctx.syncClocks()
   },
 
   [Ev.ApprovalResolved]: (ctx, payload) => {
@@ -124,5 +125,6 @@ export const APPROVAL_EVENT_HANDLERS: Record<string, EventHandler> = {
       focusedToolCallId: null,
       agent: { ...ctx.state.agent, status: 'reasoning' },
     })
+    ctx.syncClocks()
   },
 }
