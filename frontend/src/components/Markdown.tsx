@@ -1,7 +1,12 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-/** Markdown renderer styled to match the mockup's chat/content look. */
+/** Markdown renderer styled to match the mockup's chat/content look.
+ *  Tables are styled explicitly: Tailwind preflight zeroes border-width and
+ *  padding on every element, so cell rules and cell padding must be set here
+ *  (and a bare `border` utility would paint in currentColor — always pair it
+ *  with a color). One token for every cell edge, because preflight forces
+ *  border-collapse and mixed colors on adjacent edges collapse unpredictably. */
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div className={`text-base text-mute leading-loose space-y-4 [&_p]:leading-loose ${className ?? ''}`}>
@@ -31,6 +36,18 @@ export function Markdown({ text, className }: { text: string; className?: string
             <a href={href} className="text-info hover:underline" target="_blank" rel="noreferrer">
               {children}
             </a>
+          ),
+          table: ({ children }) => (
+            <div className="overflow-x-auto overflow-hidden rounded-lg border border-linestrong">
+              <table className="w-full text-xs leading-5">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-surface2 text-ink">{children}</thead>,
+          th: ({ children }) => (
+            <th className="border border-linestrong px-2 py-1 text-left font-medium align-top">{children}</th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-linestrong px-2 py-1 align-top">{children}</td>
           ),
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-linestrong pl-3 text-mute italic">{children}</blockquote>
