@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { BackendClient } from '../backend'
 import { Cmd } from '../protocol'
 import { useUIState } from '../store'
@@ -7,9 +7,11 @@ import { buildTimeline } from '../timeline'
 import { buildRailPaths, type RailMeasure, type RailPath } from '../railGeometry'
 import { ChatForm } from './chat/ChatForm'
 import { ChatList } from './chat/ChatList'
-import { buildRailRows, isNearBottom } from './chat/chatUtils'
+import { buildRailRows } from './chat/chatUtils'
+import { useTailFollow } from './chat/useTailFollow'
 
-/** Distance from the bottom within which the timeline keeps following new output. */
+/** Distance from the bottom treated as "still at the tail" — a tolerance for the
+ *  user's own scrolling, not a detach trigger (streaming invalidates distance). */
 const FOLLOW_THRESHOLD_PX = 120
 
 export function Chat({ client }: { client: BackendClient }) {
@@ -77,41 +79,34 @@ export function Chat({ client }: { client: BackendClient }) {
     return () => ro.disconnect()
   }, [measureRail])
 
-  const atBottomRef = useRef(true)
   const pendingPinRef = useRef(false)
   const pinnedUserIdRef = useRef<string | null>(null)
-
-  const onScroll = () => {
-    const el = scrollRef.current
-    if (!el) return
-    atBottomRef.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight, FOLLOW_THRESHOLD_PX)
-  }
+  // The timeline follows the tail while we own it; scrolling up detaches until the
+  // user comes back down. The slack is generous because a prompt pinned at the top
+  // deliberately leaves the tail off-screen, and because neither live scroller lets
+  // scroll anchoring write scrollTop beside us (see ChatList).
+  const { onScroll, detach } = useTailFollow(scrollRef, contentRef, { slackPx: FOLLOW_THRESHOLD_PX })
 
   // Re-pin the newest prompt to the top of the viewport once, right after it
   // lands, so the answer grows downward instead of pushing the question away.
+  // Ours deliberately steps off the tail, hence detach().
   useLayoutEffect(() => {
     if (!pendingPinRef.current || !latestUserId || latestUserId === pinnedUserIdRef.current) return
     const scroller = scrollRef.current
     const row = contentRef.current?.querySelector<HTMLElement>(`[data-user-row-id="${latestUserId}"]`)
     if (!scroller || !row) return
     scroller.scrollTop = row.offsetTop
-    atBottomRef.current = false
+    detach()
     pendingPinRef.current = false
     pinnedUserIdRef.current = latestUserId
-  }, [latestUserId])
-
-  // Follow the tail while the user is at the bottom; scrolling up pins in place.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [timeline, busy, expandedGroups])
+  }, [latestUserId, detach])
 
   const send = async () => {
     const text = draft.trim()
     if (!text) return
     setDraft('')
     pendingPinRef.current = true
-    atBottomRef.current = false
+    detach()
     await dismissPendingApprovals(client, pendingApprovals)
     const resp = await client.command(Cmd.AgentStart, { prompt: text })
     if (!resp.ok) {

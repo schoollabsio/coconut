@@ -1,8 +1,8 @@
-import { memo, useState, useRef, useLayoutEffect } from 'react'
+import { memo, useState, useRef } from 'react'
 import type { ChatMessage } from '../../protocol'
 import { FadingTail } from '../StreamingText'
 import { RailMarker } from './RailMarker'
-import { isNearBottom } from './chatUtils'
+import { useTailFollow } from './useTailFollow'
 
 type ThinkingRowProps = {
   railKey: string
@@ -14,21 +14,12 @@ export default memo(function ThinkingRow({ railKey, message }: ThinkingRowProps)
   const isDone = message.thinkingDone === true
   const thinking = message.thinking ?? ''
   const scrollRef = useRef<HTMLDivElement>(null)
-  // Follow the tail only while the user is near the bottom of the block, so
-  // scrolling up to read earlier thought isn't yanked back down (mirrors the
-  // outer chat list's at-bottom guard).
-  const atBottomRef = useRef(true)
-  const onScroll = () => {
-    const el = scrollRef.current
-    if (!el) return
-    atBottomRef.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)
-  }
-
-  useLayoutEffect(() => {
-    if (isDone) return
-    const el = scrollRef.current
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [thinking, isDone])
+  const bodyRef = useRef<HTMLDivElement>(null)
+  // Follow the tail only while we own it, so scrolling up to read an earlier
+  // thought isn't yanked back down. This box is only 6em tall, so a single
+  // streamed line is enough to break a distance-from-bottom reading of "the user
+  // left" — see tailFollow.ts for why the decision is intent-based.
+  const { onScroll } = useTailFollow(scrollRef, bodyRef, { enabled: !isDone })
 
   if (!thinking) return null
 
@@ -39,8 +30,19 @@ export default memo(function ThinkingRow({ railKey, message }: ThinkingRowProps)
         railKey={railKey}
         spanClassName="relative z-10 h-[7px] w-[7px] rounded-full border-2 border-dim bg-dim animate-pulse"
       />
-        <div ref={scrollRef} onScroll={onScroll} className="min-w-0 max-h-[6em] overflow-y-auto whitespace-pre-wrap italic text-dim" style={{ scrollbarGutter: 'stable' }}>
-          <FadingTail text={thinking} className="text-dim" />
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="min-w-0 max-h-[6em] overflow-y-auto whitespace-pre-wrap italic text-dim"
+          // We own bottom-following here; scroll anchoring would be a second writer
+          // of scrollTop, producing scroll events we then have to explain.
+          style={{ scrollbarGutter: 'stable', overflowAnchor: 'none' }}
+        >
+          {/* Block wrapper for the ResizeObserver: an inline span has no reliable
+              content box to watch for growth. */}
+          <div ref={bodyRef}>
+            <FadingTail text={thinking} className="text-dim" />
+          </div>
         </div>
       </div>
     )

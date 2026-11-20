@@ -30,7 +30,7 @@ interface ChatListProps extends RowContext {
   busy: boolean
   scrollRef: React.RefObject<HTMLDivElement>
   contentRef: React.RefObject<HTMLDivElement>
-  onScroll: () => void
+  onScroll: (event: React.UIEvent<HTMLDivElement>) => void
 }
 
 /**
@@ -106,6 +106,7 @@ export function ChatList({
     <div
       ref={scrollRef}
       onScroll={onScroll}
+      style={{ overflowAnchor: 'none' }}
       className="max-h-96 overflow-y-auto pr-2 text-base md:max-h-none md:flex-1"
     >
       <div ref={contentRef} className="relative min-h-full">
