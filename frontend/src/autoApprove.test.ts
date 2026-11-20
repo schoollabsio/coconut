@@ -7,6 +7,7 @@ import {
   cancel,
   countWords,
   dueIds,
+  fired,
   isCancelled,
   markUntimed,
   remainingMs,
@@ -17,8 +18,11 @@ import {
 } from './autoApprove'
 
 const NOW = 1_000_000
+const FLOOR = AUTO_APPROVE_DEFAULTS.floorMs
 const approval = (id: string, what = '', why = ''): Budgetable => ({ id, what, why })
 const words = (n: number) => Array(n).fill('word').join(' ')
+/** A running clock with the budget the timer would have armed it with. */
+const running = (expiresAt: number, totalMs = FLOOR): Deadline => ({ mode: 'running', expiresAt, totalMs })
 
 describe('countWords', () => {
   it('counts whitespace-delimited words', () => {
@@ -68,6 +72,39 @@ describe('budgetMs', () => {
   })
 })
 
+describe('arm', () => {
+  it('carries the budget it armed the expiry with', () => {
+    // The bar divides by totalMs; the timer fires at expiresAt. One number for
+    // both is what keeps the visual and the decision from drifting apart.
+    const a = approval('ap-1', words(120), '')
+    const deadline = arm(NOW, a)
+    expect(deadline).toEqual({ mode: 'running', expiresAt: NOW + 30_000, totalMs: 30_000 })
+  })
+
+  it('carries an overridden constant through to the deadline', () => {
+    const c = { wordsPerMinute: 240, floorMs: 30_000, ceilingMs: 180_000 }
+    expect(arm(NOW, approval('ap-1', 'short', ''), c)).toEqual({ mode: 'running', expiresAt: NOW + 30_000, totalMs: 30_000 })
+  })
+})
+
+describe('fired', () => {
+  it('marks the timer as the one that ended the countdown', () => {
+    expect(fired()).toEqual({ mode: 'fired' })
+  })
+
+  it('is NOT a cancellation — the user did not take this one back', () => {
+    expect(isCancelled(fired())).toBe(false)
+  })
+
+  it('never becomes due, so one deadline cannot fire twice', () => {
+    expect(dueIds({ 'ap-1': fired() }, NOW + 10 * 60_000)).toEqual([])
+  })
+
+  it('leaves nothing to render as a countdown', () => {
+    expect(remainingMs(fired(), NOW)).toBe(0)
+  })
+})
+
 describe('cancel', () => {
   it('stops the countdown with no remainder to resume from', () => {
     expect(cancel()).toEqual({ mode: 'cancelled' })
@@ -75,7 +112,7 @@ describe('cancel', () => {
 
   it('is recognised by predicate as well as by mode', () => {
     expect(isCancelled(cancel())).toBe(true)
-    expect(isCancelled({ mode: 'running', expiresAt: NOW })).toBe(false)
+    expect(isCancelled(running(NOW))).toBe(false)
   })
 
   it('never becomes due, however long it sits', () => {
@@ -89,23 +126,24 @@ describe('cancel', () => {
 
 describe('remainingMs', () => {
   it('counts down a running clock', () => {
-    const running = { mode: 'running', expiresAt: NOW + 8_000 } as const
-    expect(remainingMs(running, NOW)).toBe(8_000)
-    expect(remainingMs(running, NOW + 3_000)).toBe(5_000)
+    const clock = running(NOW + 8_000, 8_000)
+    expect(remainingMs(clock, NOW)).toBe(8_000)
+    expect(remainingMs(clock, NOW + 3_000)).toBe(5_000)
   })
 
   it('clamps at zero after expiry rather than going negative', () => {
-    const running = { mode: 'running', expiresAt: NOW + 1_000 } as const
-    expect(remainingMs(running, NOW + 9_000)).toBe(0)
+    const clock = running(NOW + 1_000)
+    expect(remainingMs(clock, NOW + 9_000)).toBe(0)
   })
 })
 
 describe('dueIds', () => {
   it('returns only clocks that have expired', () => {
     const deadlines = {
-      'ap-1': { mode: 'running', expiresAt: NOW - 1 } as const,
-      'ap-2': { mode: 'running', expiresAt: NOW + 5_000 } as const,
+      'ap-1': running(NOW - 1),
+      'ap-2': running(NOW + 5_000),
       'ap-3': cancel(),
+      'ap-4': fired(),
     }
     expect(dueIds(deadlines, NOW)).toEqual(['ap-1'])
   })
@@ -118,21 +156,18 @@ describe('dueIds', () => {
 describe('armPlan', () => {
   it('arms a newly pending approval at a full budget', () => {
     const next = armPlan([approval('ap-1', 'Add guard', 'because')], {}, NOW)
-    expect(next['ap-1']).toEqual({ mode: 'running', expiresAt: NOW + AUTO_APPROVE_DEFAULTS.floorMs })
+    expect(next['ap-1']).toEqual({ mode: 'running', expiresAt: NOW + FLOOR, totalMs: FLOOR })
   })
 
   it('keeps an existing clock so unrelated events cannot extend the window', () => {
-    const existing = { 'ap-1': { mode: 'running', expiresAt: NOW + 1_500 } } as const
+    const existing: Record<string, Deadline> = { 'ap-1': running(NOW + 1_500, 6_500) }
     const later = NOW + 2_000
     const next = armPlan([approval('ap-1', words(500), '')], existing, later)
     expect(next['ap-1']).toBe(existing['ap-1'])
   })
 
   it('drops approvals that are no longer pending', () => {
-    const prev: Record<string, Deadline> = {
-      'ap-1': { mode: 'running', expiresAt: NOW + 5_000 },
-      'ap-2': { mode: 'running', expiresAt: NOW + 5_000 },
-    }
+    const prev: Record<string, Deadline> = { 'ap-1': running(NOW + 5_000), 'ap-2': running(NOW + 5_000) }
     const next = armPlan([approval('ap-2')], prev, NOW)
     expect(Object.keys(next)).toEqual(['ap-2'])
   })
@@ -143,11 +178,17 @@ describe('armPlan', () => {
     expect(next['ap-1']).toEqual({ mode: 'cancelled' })
   })
 
+  it('keeps a fired clock fired, so a re-plan cannot fire it again', () => {
+    const prev: Record<string, Deadline> = { 'ap-1': fired() }
+    const next = armPlan([approval('ap-1', words(500), '')], prev, NOW + 60_000)
+    expect(next['ap-1']).toEqual({ mode: 'fired' })
+  })
+
   it('never restarts or invents a clock on a re-plan', () => {
     // Nothing in this module re-arms — enabling is markUntimed, so no re-plan
     // can hand an approval a countdown it did not already have.
     const prev: Record<string, Deadline> = {
-      'ap-1': { mode: 'running', expiresAt: NOW + 1_000 },
+      'ap-1': running(NOW + 1_000),
       'ap-2': cancel(),
       'ap-3': untimed(),
     }
@@ -173,10 +214,7 @@ describe('markUntimed', () => {
   })
 
   it('keeps a running clock and a cancellation exactly as they were', () => {
-    const prev: Record<string, Deadline> = {
-      'ap-1': { mode: 'running', expiresAt: NOW + 1_000 },
-      'ap-2': cancel(),
-    }
+    const prev: Record<string, Deadline> = { 'ap-1': running(NOW + 1_000), 'ap-2': cancel() }
     const next = markUntimed([approval('ap-1'), approval('ap-2'), approval('ap-3')], prev)
     expect(next['ap-1']).toBe(prev['ap-1'])
     expect(next['ap-2'].mode).toBe('cancelled')

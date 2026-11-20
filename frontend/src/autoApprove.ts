@@ -29,14 +29,24 @@ export const AUTO_APPROVE_DEFAULTS: BudgetConstants = {
 }
 
 /** A pending approval's clock. Only `running` ever fires:
+ *    - `fired` is the timer's own terminal mark — the budget ran out and the
+ *      decision went out. It is NOT the user's cancellation, so the card must
+ *      never describe it as one;
  *    - `cancelled` is terminal — the user took the decision back, so the
  *      countdown never restarts for that approval;
  *    - `manual` never started — the approval was already waiting when the mode
  *      was switched on, and arming is forward-only (flipping a switch must not
  *      light a fuse under something that had no countdown a moment ago).
- *  Both stay the user's to decide by hand, or to sweep with the next prompt. */
+ *  Every terminal mode stays the user's to decide by hand, or to sweep with the
+ *  next prompt.
+ *
+ *  `totalMs` is the budget the timer was ACTUALLY armed with, carried on the
+ *  deadline. The countdown bar divides by this rather than re-running budgetMs
+ *  at paint time, so the bar and the timeout it visualises cannot drift apart —
+ *  not across policy constants, not across re-renders, not at all. */
 export type Deadline =
-  | { mode: 'running'; expiresAt: number }
+  | { mode: 'running'; expiresAt: number; totalMs: number }
+  | { mode: 'fired' }
   | { mode: 'cancelled' }
   | { mode: 'manual' }
 
@@ -73,7 +83,8 @@ export function budgetMs(
 
 /** A fresh, full-budget clock starting now. */
 export function arm(now: number, approval: Budgetable, c: BudgetConstants = AUTO_APPROVE_DEFAULTS): Deadline {
-  return { mode: 'running', expiresAt: now + budgetMs(approval, c) }
+  const totalMs = budgetMs(approval, c)
+  return { mode: 'running', expiresAt: now + totalMs, totalMs }
 }
 
 /** Stop the countdown for good — no resume, no banked remainder. */
@@ -87,12 +98,23 @@ export function untimed(): Deadline {
   return { mode: 'manual' }
 }
 
-/** True when the user has taken this decision back out of the timer's hands. */
+/** The timer's own terminal mark: it fired, and the decision went out with it.
+ *  Kept distinct from `cancelled` because "you took this countdown back" is a
+ *  false story about a clock that simply ran out — and because, like
+ *  `cancelled`, it is non-running, so the scheduled handle is dropped and one
+ *  deadline can never fire twice. */
+export function fired(): Deadline {
+  return { mode: 'fired' }
+}
+
+/** True when the USER took this decision back out of the timer's hands — which
+ *  is not the same as the timer having fired it (see `fired`). */
 export function isCancelled(deadline: Deadline): boolean {
   return deadline.mode === 'cancelled'
 }
 
-/** Ms until expiry; 0 once due or cancelled, so callers render without clamping. */
+/** Ms until expiry; 0 once due, fired, cancelled, or never armed — so callers
+ *  render without clamping. */
 export function remainingMs(deadline: Deadline, now: number): number {
   return deadline.mode === 'running' ? Math.max(0, deadline.expiresAt - now) : 0
 }
@@ -102,7 +124,9 @@ export function isDue(deadline: Deadline, now: number): boolean {
 }
 
 /** Which approvals may fire now, in the order they were requested.
- *  Cancelled items are never returned. */
+ *  Terminal clocks — fired, cancelled, never-armed — are never returned. Used
+ *  by the overdue sweep for deadlines whose timer never got its callback (a
+ *  hidden window throttles timers; a suspended process sleeps through them). */
 export function dueIds(
   deadlines: Record<string, Deadline>,
   now: number,

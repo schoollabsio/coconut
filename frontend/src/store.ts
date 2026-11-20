@@ -28,6 +28,7 @@ import {
   disableClocks as disableAutoClocks,
   enableClocks as enableAutoClocks,
   spendClock as spendAutoClock,
+  sweepDueClocks as sweepAutoClocks,
   syncClocks as syncAutoClocks,
   type ClockTimers,
 } from './storeClocks'
@@ -201,6 +202,14 @@ export class UIStore implements EventCtx {
    *  dropped. Clears everything while off. */
   syncClocks(): void {
     syncAutoClocks(this, this.clocks)
+  }
+
+  /** Fire any clock that is already overdue. Called when the window comes back:
+   *  a hidden one throttles its timers and a suspended machine sleeps clean
+   *  through deadlines, so a card must not go on counting down a decision that
+   *  fell due minutes ago. */
+  sweepApprovalClocks(): void {
+    sweepAutoClocks(this, this.clocks)
   }
 
   /** The header switch, and it is forward-only: turning it on does NOT light a

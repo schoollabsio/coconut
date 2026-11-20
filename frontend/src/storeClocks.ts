@@ -7,7 +7,7 @@
  * response. It lives outside store.ts so the timing rules and their races sit
  * in one place that can be tested with a fake context and fake timers.
  */
-import { armPlan, cancel as spentClock, markUntimed, type Deadline } from './autoApprove'
+import { armPlan, cancel as spentClock, dueIds, fired as firedClock, markUntimed, type Deadline } from './autoApprove'
 import type { ApprovalDecision } from './approvalActions'
 import type { Notification, UIState } from './storeState'
 
@@ -54,20 +54,28 @@ export function disableClocks(ctx: ClockCtx, timers: ClockTimers): void {
   schedule(ctx, timers, {})
 }
 
-/** Take one clock out of the timer's hands for good: the card's "cancel timer",
- *  and also what firing does, so one deadline yields at most one auto-approval
- *  however the response comes back. */
-export function spendClock(ctx: ClockCtx, timers: ClockTimers, approvalId: string): void {
-  const deadlines = { ...ctx.state.autoApprove.deadlines, [approvalId]: spentClock() }
+/** Take one clock out of the timer's hands for good — `cancelled` when the user
+ *  pressed "cancel timer", `fired` when the budget ran out. Either way the clock
+ *  ends up non-running, so `schedule` drops its handle and one deadline yields at
+ *  most one decision however the response comes back. */
+function settle(ctx: ClockCtx, timers: ClockTimers, approvalId: string, next: Deadline): void {
+  const deadlines = { ...ctx.state.autoApprove.deadlines, [approvalId]: next }
   ctx.set({ autoApprove: { ...ctx.state.autoApprove, deadlines } })
   schedule(ctx, timers, deadlines)
+}
+
+/** The card's "cancel timer": this decision is the user's to make by hand. */
+export function spendClock(ctx: ClockCtx, timers: ClockTimers, approvalId: string): void {
+  settle(ctx, timers, approvalId, spentClock())
 }
 
 /** A clock expired. Two races to lose quietly: the approval may already be
  *  resolved (a click, another window, the backend), and the switch may have been
  *  flipped off in the meantime. */
 export function fireClock(ctx: ClockCtx, timers: ClockTimers, approvalId: string): void {
-  spendClock(ctx, timers, approvalId)
+  // Marked `fired`, NOT `cancelled`: the card must not tell the user they took
+  // this countdown back when it simply ran out.
+  settle(ctx, timers, approvalId, firedClock())
   if (!ctx.state.autoApprove.on) return
   if (!ctx.state.pendingApprovals.some((a) => a.id === approvalId)) return
   if (!ctx.respondApproval) {
@@ -77,6 +85,15 @@ export function fireClock(ctx: ClockCtx, timers: ClockTimers, approvalId: string
   void ctx.respondApproval(approvalId, 'allow').then((ok) => {
     if (!ok) ctx.pushNotification('warning', 'An auto-approval no longer applied (already resolved elsewhere?)')
   })
+}
+
+/** Fire anything already overdue. The safety net for a timer that never got its
+ *  callback: a hidden or occluded window throttles timers, and a suspended
+ *  process sleeps straight through a deadline — without this, the user comes
+ *  back to a card still counting down over a decision that was due minutes ago. */
+export function sweepDueClocks(ctx: ClockCtx, timers: ClockTimers): void {
+  if (!ctx.state.autoApprove.on) return
+  for (const id of dueIds(ctx.state.autoApprove.deadlines, Date.now())) fireClock(ctx, timers, id)
 }
 
 function schedule(ctx: ClockCtx, timers: ClockTimers, deadlines: Record<string, Deadline>) {

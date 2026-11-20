@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { BackendClient, BackendUnavailableError } from './backend'
 import { Cmd, type BackendMessage } from './protocol'
 import { pickApprovalToRespond, respondToApproval } from './approvalActions'
+import { refreshClock } from './approvalClock'
 import { store, useUIState } from './store'
 import { Chat } from './components/Chat'
 import { ColumnGrid } from './components/ColumnGrid'
@@ -113,6 +114,26 @@ export default function App() {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [client, focusedApprovalId, pendingApprovals])
+
+  // A hidden or occluded window throttles timers: the countdown ticker stops and
+  // a deadline can be slept clean through. Coming back, re-read the wall clock
+  // and fire whatever is already overdue, so no card is left frozen at "3s" over
+  // a decision that fell due minutes ago.
+  useEffect(() => {
+    const onReturn = () => {
+      refreshClock()
+      store.sweepApprovalClocks()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') onReturn()
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   return (
     // Content fills the whole window (hidden titlebar). The root is the

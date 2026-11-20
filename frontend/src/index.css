@@ -165,6 +165,21 @@ html, body, #root {
   animation: subtle-pulse 3s ease-in-out infinite;
 }
 
+/* The auto-approve countdown. The bar drains off the budget the timer was armed
+   with (duration/delay are set inline from the deadline), so it reaches zero at
+   exactly the instant the decision is sent rather than on the last React tick
+   before it — which is why the whole width, not a percent, is animated. */
+@keyframes clock-drain {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.clock-drain {
+  animation-name: clock-drain;
+  animation-timing-function: linear;
+  /* Hold at empty: after the clock fires, an unfilled bar is the truth. */
+  animation-fill-mode: forwards;
+}
+
 /* Sticky user prompt in the chat timeline (Gemini-style). */
 .user-sticky {
   position: sticky;
@@ -327,5 +342,11 @@ html, body, #root {
   }
   .animate-spin {
     animation: none;
+  }
+  /* .clock-drain is NOT disabled: freezing it would misreport a live deadline
+     for the whole countdown, worse than a very small amount of motion. Steps
+     keep it legible without a smooth sweep. */
+  .clock-drain {
+    animation-timing-function: steps(12, end);
   }
 }

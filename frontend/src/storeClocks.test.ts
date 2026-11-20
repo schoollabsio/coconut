@@ -5,7 +5,7 @@
  * what stops it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { disableClocks, enableClocks, fireClock, spendClock, syncClocks, type ClockCtx, type ClockTimers } from './storeClocks'
+import { disableClocks, enableClocks, fireClock, spendClock, sweepDueClocks, syncClocks, type ClockCtx, type ClockTimers } from './storeClocks'
 import { AUTO_APPROVE_DEFAULTS } from './autoApprove'
 import { initialState } from './storeState'
 import type { ApprovalRequest } from './protocol'
@@ -207,5 +207,90 @@ describe('fireClock', () => {
     vi.advanceTimersByTime(FLOOR)
     await Promise.resolve() // the response handler is a microtask
     expect(notes.some((n) => n.includes('no longer applied'))).toBe(true)
+  })
+})
+
+describe('a clock that fires', () => {
+  it('marks it fired, not cancelled — the user did not take it back', () => {
+    // The card renders this mode; as `cancelled` it told the user they had
+    // stopped the countdown, and dropped the bar mid-drain.
+    const timers: ClockTimers = new Map()
+    const { ctx } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+
+    vi.advanceTimersByTime(FLOOR)
+    expect(ctx.state.autoApprove.deadlines['ap-1'].mode).toBe('fired')
+  })
+
+  it('is never re-armed — not by a sync, not by cycling the switch', () => {
+    const timers: ClockTimers = new Map()
+    const { ctx, sent } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+    vi.advanceTimersByTime(FLOOR)
+
+    syncClocks(ctx, timers) // an unrelated event re-plans the pending set
+    expect(ctx.state.autoApprove.deadlines['ap-1'].mode).toBe('fired')
+
+    // Switching off wipes every clock by design (a cancelled one behaves the
+    // same way), so back on it comes forward-only as `manual` — never re-armed.
+    // What matters is that it cannot fire a second time either way.
+    disableClocks(ctx, timers)
+    enableClocks(ctx, timers)
+
+    expect(ctx.state.autoApprove.deadlines['ap-1'].mode).not.toBe('running')
+    vi.advanceTimersByTime(FLOOR * 10)
+    expect(sent).toHaveBeenCalledOnce()
+  })
+})
+
+describe('sweepDueClocks', () => {
+  it('fires a clock whose timer never landed', () => {
+    // The reason this exists: a hidden window throttles its timers and a
+    // suspended machine sleeps clean through a deadline, so the callback that
+    // was due may simply never arrive.
+    const timers: ClockTimers = new Map()
+    const { ctx, sent } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+
+    // The scheduled handle is gone but the wall clock still walked past
+    // expiresAt — the missed-callback state, not an early one.
+    for (const { handle } of timers.values()) clearTimeout(handle)
+    timers.clear()
+    vi.advanceTimersByTime(FLOOR + 60_000)
+    expect(sent).not.toHaveBeenCalled()
+
+    sweepDueClocks(ctx, timers)
+    expect(sent).toHaveBeenCalledWith('ap-1', 'allow')
+    expect(ctx.state.autoApprove.deadlines['ap-1'].mode).toBe('fired')
+  })
+
+  it('leaves a clock that is still counting alone', () => {
+    const timers: ClockTimers = new Map()
+    const { ctx, sent } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+
+    sweepDueClocks(ctx, timers)
+    expect(sent).not.toHaveBeenCalled()
+    expect(ctx.state.autoApprove.deadlines['ap-1'].mode).toBe('running')
+  })
+
+  it('does nothing while the switch is off', () => {
+    const timers: ClockTimers = new Map()
+    const { ctx, sent } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+    disableClocks(ctx, timers)
+
+    sweepDueClocks(ctx, timers)
+    expect(sent).not.toHaveBeenCalled()
+  })
+
+  it('never re-fires a clock that already fired', () => {
+    const timers: ClockTimers = new Map()
+    const { ctx, sent } = makeCtx(true, [approval('ap-1')])
+    syncClocks(ctx, timers)
+    vi.advanceTimersByTime(FLOOR)
+
+    sweepDueClocks(ctx, timers)
+    expect(sent).toHaveBeenCalledOnce()
   })
 })

@@ -6,9 +6,14 @@ import { store, useUIState } from '../store'
 /**
  * ApprovalClock — the countdown strip on an approval card and in the panel.
  *
- * It re-renders on a shared per-second ticker rather than pushing per-second
- * updates through the store: only this line moves, one interval serves the
- * window, and it stops when the last card unmounts.
+ * The bar drains on a CSS animation sized from the armed budget, not off the
+ * per-second ticker: it reaches zero at exactly the instant the store's timer
+ * fires the decision. Ticking the bar through React could never land there — a
+ * whole-second ticker plus a rounded percent means the last frame painted before
+ * expiry always still has a slice left. The ticker now only keeps the seconds
+ * label current, and each tick re-seeks the animation to the true elapsed time
+ * (a negative animation-delay), which also heals a window that was throttled
+ * while hidden.
  * Renders nothing while auto-approve is off, so default cards are unchanged —
  * which is why `className` styles the root here rather than the component
  * carrying a margin that would show up as a gap in an idle card.
@@ -23,9 +28,19 @@ export function ApprovalClock({ approval, className = '' }: { approval: Budgetab
   // ticks at all, and the shared interval never starts. The wall clock arrives
   // as a subscription rather than a Date.now() call here, because React
   // requires render to be pure.
-  const tick = useSyncExternalStore(running ? subscribeClock : noTick, clockSnapshot, clockSnapshot)
-  const view = clockView(approval, deadline, auto.on, tick * 1000)
+  const now = useSyncExternalStore(running ? subscribeClock : noTick, clockSnapshot, clockSnapshot)
+  const view = clockView(deadline, auto.on, now)
   if (view.kind === 'idle') return null
+
+  if (view.kind === 'fired') {
+    // The track stays, empty, so the strip does not jump as the card resolves.
+    return (
+      <div className={`min-w-0 flex-1 text-faint ${className}`}>
+        <div>{view.label}</div>
+        <div className="mt-1 h-[2px] w-full overflow-hidden rounded bg-line" />
+      </div>
+    )
+  }
 
   if (view.kind !== 'running') {
     const hint =
@@ -38,6 +53,9 @@ export function ApprovalClock({ approval, className = '' }: { approval: Budgetab
       </div>
     )
   }
+
+  // Where this clock sits in its own budget, in ms since it was armed.
+  const elapsed = Math.max(0, Math.min(view.totalMs, view.totalMs - view.leftMs))
 
   return (
     <div className={`min-w-0 flex-1 ${className}`}>
@@ -53,7 +71,16 @@ export function ApprovalClock({ approval, className = '' }: { approval: Budgetab
         </button>
       </div>
       <div className="mt-1 h-[2px] w-full overflow-hidden rounded bg-line">
-        <div className="h-full bg-warn transition-[width] duration-1000 ease-linear" style={{ width: `${view.percent}%` }} />
+        {/* .clock-drain supplies the name/timing/fill; the armed budget and the
+            elapsed offset are per-clock, so they go inline. A negative delay
+            starts the animation partway through, so a mid-countdown remount (or
+            the per-second tick) resumes at the true remaining width instead of
+            restarting from full. `width` alone is the fallback for a renderer
+            that does not run the animation. */}
+        <div
+          className="clock-drain h-full bg-warn"
+          style={{ width: `${view.percent}%`, animationDuration: `${view.totalMs}ms`, animationDelay: `${-elapsed}ms` }}
+        />
       </div>
     </div>
   )
